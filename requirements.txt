@@ -1,0 +1,14 @@
+# Shopify API calls
+requests
+
+# Environment variable loading
+python-dotenv
+
+# Groq LLM
+groq
+
+# Telegram bot
+python-telegram-bot
+
+# Data validation
+pydantic
