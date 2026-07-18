@@ -10,17 +10,16 @@ This is the ONLY file in the project that:
     - Understands Shopify's JSON response format
 
 Everything above this layer (tools, orchestrator) calls clean
-functions like get_order(order_id) and gets back simple Python
-objects — never raw Shopify JSON.
+functions and gets back simple Python objects — never raw JSON.
 
 Authentication:
-    Shopify's new Dev Dashboard uses OAuth2 client credentials flow.
-    We exchange CLIENT_ID + CLIENT_SECRET for a short-lived access token
-    (valid ~24 hours). We cache it in memory and refresh when expired.
+    Uses OAuth2 client credentials flow.
+    Exchanges CLIENT_ID + CLIENT_SECRET for a short-lived access
+    token (~24 hours). Cached in memory, refreshed when expired.
 """
 
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from config import settings
@@ -43,13 +42,17 @@ class ShopifyClient:
     def __init__(self):
         self.store_domain = settings.SHOPIFY_STORE_DOMAIN
         self.api_version = settings.SHOPIFY_API_VERSION
-        self.base_url = f"https://{self.store_domain}/admin/api/{self.api_version}"
+        self.base_url = (
+            f"https://{self.store_domain}/admin/api/{self.api_version}"
+        )
 
-        # Token cache — avoids fetching a new token on every single API call
+        # Token cache
         self._access_token: Optional[str] = None
         self._token_expires_at: Optional[datetime] = None
 
-        logger.info(f"ShopifyClient initialized for store: {self.store_domain}")
+        logger.info(
+            f"ShopifyClient initialized for store: {self.store_domain}"
+        )
 
     # ------------------------------------------------------------------
     # Authentication
@@ -59,9 +62,8 @@ class ShopifyClient:
         """
         Returns a valid access token, fetching a new one if expired.
 
-        Shopify tokens last ~24 hours. We cache the token in memory
-        and only request a new one when the current one has expired.
-        This avoids unnecessary token requests on every API call.
+        Tokens last ~24 hours. We cache in memory and only request
+        a new one when the current one has expired.
 
         Returns:
             Valid Shopify Admin API access token string.
@@ -79,7 +81,9 @@ class ShopifyClient:
 
         logger.info("Requesting new Shopify access token")
 
-        token_url = f"https://{self.store_domain}/admin/oauth/access_token"
+        token_url = (
+            f"https://{self.store_domain}/admin/oauth/access_token"
+        )
         payload = {
             "client_id": settings.SHOPIFY_CLIENT_ID,
             "client_secret": settings.SHOPIFY_CLIENT_SECRET,
@@ -87,21 +91,23 @@ class ShopifyClient:
         }
 
         try:
-            response = requests.post(token_url, data=payload, timeout=10)
-            logger.debug(f"Token response status: {response.status_code}")
-            logger.debug(f"Token response body: {response.text}")
+            response = requests.post(
+                token_url, data=payload, timeout=10
+            )
             response.raise_for_status()
             data = response.json()
 
             self._access_token = data["access_token"]
 
-            # Shopify returns expires_in in seconds — we store the exact expiry time
-            # Subtract 60 seconds as a safety buffer so we refresh slightly early
             expires_in = data.get("expires_in", 86400)
-            from datetime import timedelta
-            self._token_expires_at = now + timedelta(seconds=expires_in - 60)
+            self._token_expires_at = now + timedelta(
+                seconds=expires_in - 60
+            )
 
-            logger.info(f"New Shopify token received. Scopes: {data.get('scope', 'unknown')}")
+            logger.info(
+                f"New Shopify token received. "
+                f"Scopes: {data.get('scope', 'unknown')}"
+            )
             return self._access_token
 
         except requests.exceptions.RequestException as e:
@@ -130,13 +136,15 @@ class ShopifyClient:
             Parsed JSON response as a dict.
 
         Raises:
-            RuntimeError: If the request fails or returns an error status.
+            RuntimeError: If the request fails.
         """
         url = f"{self.base_url}{endpoint}"
         logger.debug(f"GET {url}")
 
         try:
-            response = requests.get(url, headers=self._headers(), timeout=10)
+            response = requests.get(
+                url, headers=self._headers(), timeout=10
+            )
             response.raise_for_status()
             return response.json()
 
@@ -145,7 +153,43 @@ class ShopifyClient:
             raise RuntimeError(f"Shopify API error: {e}")
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Shopify API request failed: {e} | URL: {url}")
+            logger.error(
+                f"Shopify API request failed: {e} | URL: {url}"
+            )
+            raise RuntimeError(f"Shopify request failed: {e}")
+
+    def _post(self, endpoint: str, payload: dict) -> dict:
+        """
+        Makes a POST request to the Shopify Admin API.
+
+        Args:
+            endpoint: API path e.g. "/orders/123/refunds.json"
+            payload:  Request body as a dict.
+
+        Returns:
+            Parsed JSON response as a dict.
+
+        Raises:
+            RuntimeError: If the request fails.
+        """
+        url = f"{self.base_url}{endpoint}"
+        logger.debug(f"POST {url}")
+
+        try:
+            response = requests.post(
+                url, headers=self._headers(), json=payload, timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Shopify API HTTP error: {e} | URL: {url}")
+            raise RuntimeError(f"Shopify API error: {e}")
+
+        except requests.exceptions.RequestException as e:
+            logger.error(
+                f"Shopify API request failed: {e} | URL: {url}"
+            )
             raise RuntimeError(f"Shopify request failed: {e}")
 
     # ------------------------------------------------------------------
@@ -158,17 +202,12 @@ class ShopifyClient:
 
         Args:
             order_id: Shopify's internal numeric order ID
-                      (the long number in the URL, NOT the #1001 number)
+                      (the long number in the URL, NOT #1001)
 
         Returns:
             OrderSummary if found, None if order doesn't exist.
-
-        Example:
-            order = client.get_order(6688665141445)
-            print(order.order_number)   # "#1001"
-            print(order.status)         # "paid"
         """
-        logger.info(f"Fetching order: {order_id}")
+        logger.info(f"Fetching order by ID: {order_id}")
 
         try:
             data = self._get(f"/orders/{order_id}.json")
@@ -182,26 +221,22 @@ class ShopifyClient:
         """
         Fetches all orders placed by a customer email address.
 
-        Useful when a customer says "check my orders" without
-        providing a specific order number.
-
         Args:
-            email: Customer's email address
+            email: Customer's email address.
 
         Returns:
             List of OrderSummary objects, newest first.
             Empty list if no orders found.
-
-        Example:
-            orders = client.get_orders_by_email("ali@example.com")
-            for order in orders:
-                print(order.order_number, order.status)
         """
         logger.info(f"Fetching orders for email: {email}")
 
         try:
-            data = self._get(f"/orders.json?email={email}&status=any")
-            orders = [self._parse_order(o) for o in data.get("orders", [])]
+            data = self._get(
+                f"/orders.json?email={email}&status=any"
+            )
+            orders = [
+                self._parse_order(o) for o in data.get("orders", [])
+            ]
             logger.info(f"Found {len(orders)} orders for {email}")
             return orders
 
@@ -209,19 +244,71 @@ class ShopifyClient:
             logger.error(f"Failed to fetch orders for {email}: {e}")
             return []
 
-    def get_product(self, product_id: int) -> Optional[dict]:
+    def get_orders_by_number(
+        self, order_number: str
+    ) -> list[OrderSummary]:
         """
-        Fetches basic product info by product ID.
+        Fetches orders matching a given order number.
+
+        Shopify has no direct "search by order number" endpoint,
+        so we fetch recent orders and filter by the name field.
+
+        Args:
+            order_number: Order number without # e.g. "1001"
 
         Returns:
-            Dict with title, price, inventory status.
-            None if product not found.
+            List of matching OrderSummary objects (usually one).
         """
-        logger.info(f"Fetching product: {product_id}")
+        logger.info(f"Searching for order number: #{order_number}")
 
         try:
-            data = self._get(f"/products/{product_id}.json")
-            product = data["product"]
+            data = self._get("/orders.json?status=any&limit=250")
+            all_orders = [
+                self._parse_order(o) for o in data.get("orders", [])
+            ]
+
+            # Match by order number — Shopify stores it as "#1001"
+            matches = [
+                o for o in all_orders
+                if o.order_number.lstrip("#") == order_number
+            ]
+
+            logger.info(
+                f"Found {len(matches)} orders matching #{order_number}"
+            )
+            return matches
+
+        except RuntimeError as e:
+            logger.error(f"Failed to search orders by number: {e}")
+            return []
+
+    def get_product_by_name(
+        self, product_name: str
+    ) -> Optional[dict]:
+        """
+        Fetches basic product info by searching product title.
+
+        Args:
+            product_name: Product name or partial name.
+
+        Returns:
+            Dict with title, status, variants. None if not found.
+        """
+        logger.info(f"Fetching product by name: {product_name}")
+
+        try:
+            data = self._get(
+                f"/products.json?title={product_name}&limit=5"
+            )
+            products = data.get("products", [])
+
+            if not products:
+                logger.warning(
+                    f"No product found matching: {product_name}"
+                )
+                return None
+
+            product = products[0]
 
             return {
                 "id": product["id"],
@@ -231,15 +318,71 @@ class ShopifyClient:
                     {
                         "title": v["title"],
                         "price": v["price"],
-                        "inventory_quantity": v.get("inventory_quantity", 0),
+                        "inventory_quantity": v.get(
+                            "inventory_quantity", 0
+                        ),
                     }
                     for v in product.get("variants", [])
                 ],
             }
 
         except RuntimeError as e:
-            logger.error(f"Failed to fetch product {product_id}: {e}")
+            logger.error(
+                f"Failed to fetch product '{product_name}': {e}"
+            )
             return None
+
+    def create_refund(
+        self,
+        order_id: int,
+        amount: float,
+        reason: str,
+    ) -> bool:
+        """
+        Issues a refund for an order via Shopify API.
+
+        Only called after guardrails have confirmed eligibility.
+
+        Args:
+            order_id: Shopify internal order ID.
+            amount:   Amount to refund in store currency.
+            reason:   Customer's stated reason (stored on order).
+
+        Returns:
+            True if refund was created successfully, False otherwise.
+        """
+        logger.info(
+            f"Creating refund | order_id={order_id} amount={amount}"
+        )
+
+        payload = {
+            "refund": {
+                "notify": True,
+                "note": reason,
+                "transactions": [
+                    {
+                        "kind": "refund",
+                        "amount": str(amount),
+                        "gateway": "manual",
+                    }
+                ],
+            }
+        }
+
+        try:
+            self._post(
+                f"/orders/{order_id}/refunds.json", payload
+            )
+            logger.info(
+                f"Refund created successfully for order {order_id}"
+            )
+            return True
+
+        except RuntimeError as e:
+            logger.error(
+                f"Failed to create refund for order {order_id}: {e}"
+            )
+            return False
 
     # ------------------------------------------------------------------
     # Private parsing helpers
@@ -249,27 +392,26 @@ class ShopifyClient:
         """
         Converts raw Shopify order JSON into a clean OrderSummary.
 
-        This is where we "throw away" the 100+ fields Shopify returns
-        and keep only what our agent actually needs.
-
         Args:
-            raw: Raw order dict from Shopify API response
+            raw: Raw order dict from Shopify API response.
 
         Returns:
-            Clean OrderSummary dataclass instance
+            Clean OrderSummary dataclass instance.
         """
-        # Extract product names from line items
-        line_items = [item.get("name", "Unknown item") for item in raw.get("line_items", [])]
+        line_items = [
+            item.get("name", "Unknown item")
+            for item in raw.get("line_items", [])
+        ]
 
-        # Parse created_at string into timezone-aware datetime
         created_at_str = raw.get("created_at", "")
         try:
             created_at = datetime.fromisoformat(created_at_str)
         except (ValueError, TypeError):
-            logger.warning(f"Could not parse created_at: {created_at_str}")
+            logger.warning(
+                f"Could not parse created_at: {created_at_str}"
+            )
             created_at = datetime.now(timezone.utc)
 
-        # Extract customer email safely (customer may be None for draft orders)
         customer = raw.get("customer") or {}
         customer_email = customer.get("email")
 
