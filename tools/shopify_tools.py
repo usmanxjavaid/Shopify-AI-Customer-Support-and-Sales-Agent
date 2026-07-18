@@ -25,6 +25,8 @@ Flow:
 from typing import Optional
 from integrations.shopify_client import ShopifyClient
 from core.guardrails import check_refund_eligibility
+import requests as http_requests
+from config import settings
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -307,6 +309,10 @@ def escalate_to_human(reason: str) -> str:
     """
     Escalates the current conversation to a human support agent.
 
+    Sends a real-time notification to the store owner via Telegram,
+    so escalations don't just get logged silently — someone actually
+    gets pinged to follow up.
+
     Use this when:
         - The customer asks to speak to a human
         - A refund tool returns REFUND_NOT_ELIGIBLE or REFUND_FAILED
@@ -316,16 +322,13 @@ def escalate_to_human(reason: str) -> str:
 
     Args:
         reason: Clear explanation of why escalation is needed.
-                This goes directly to the human agent so they
-                can pick up the conversation with full context.
 
     Returns:
         Confirmation message to relay to the customer.
     """
     logger.warning(f"Escalating to human | reason: {reason}")
 
-    # NOTE: in a later step this will also send a Telegram
-    # notification to the store owner with conversation summary
+    _notify_owner(reason)
 
     return (
         f"ESCALATED: {reason} | "
@@ -334,4 +337,40 @@ def escalate_to_human(reason: str) -> str:
     )
 
 
-logger.debug("tools.shopify_tools loaded successfully")
+def _notify_owner(reason: str) -> None:
+    """
+    Sends a Telegram message to the store owner about an escalation.
+
+    Uses Telegram's raw HTTP API directly (not python-telegram-bot)
+    to avoid circular imports with the adapter layer — this keeps
+    the tools layer independent of any specific channel.
+
+    Args:
+        reason: Why this conversation was escalated.
+    """
+    if not settings.TELEGRAM_BOT_TOKEN or not settings.OWNER_TELEGRAM_CHAT_ID:
+        logger.warning(
+            "Cannot notify owner — TELEGRAM_BOT_TOKEN or "
+            "OWNER_TELEGRAM_CHAT_ID not configured"
+        )
+        return
+
+    url = (
+        f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}"
+        f"/sendMessage"
+    )
+    message = f"🚨 Escalation needed\n\nReason: {reason}"
+
+    try:
+        http_requests.post(
+            url,
+            json={
+                "chat_id": settings.OWNER_TELEGRAM_CHAT_ID,
+                "text": message,
+            },
+            timeout=10,
+        )
+        logger.info("Owner notified of escalation via Telegram")
+
+    except http_requests.exceptions.RequestException as e:
+        logger.error(f"Failed to notify owner: {e}")
