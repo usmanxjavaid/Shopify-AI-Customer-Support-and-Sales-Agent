@@ -193,7 +193,7 @@ class ShopifyClient:
             raise RuntimeError(f"Shopify request failed: {e}")
 
     # ------------------------------------------------------------------
-    # Public API methods
+    # Order methods
     # ------------------------------------------------------------------
 
     def get_order(self, order_id: int) -> Optional[OrderSummary]:
@@ -201,8 +201,7 @@ class ShopifyClient:
         Fetches a single order by its Shopify internal ID.
 
         Args:
-            order_id: Shopify's internal numeric order ID
-                      (the long number in the URL, NOT #1001)
+            order_id: Shopify's internal numeric order ID.
 
         Returns:
             OrderSummary if found, None if order doesn't exist.
@@ -225,8 +224,7 @@ class ShopifyClient:
             email: Customer's email address.
 
         Returns:
-            List of OrderSummary objects, newest first.
-            Empty list if no orders found.
+            List of OrderSummary objects. Empty list if none found.
         """
         logger.info(f"Fetching orders for email: {email}")
 
@@ -250,7 +248,7 @@ class ShopifyClient:
         """
         Fetches orders matching a given order number.
 
-        Shopify has no direct "search by order number" endpoint,
+        Shopify has no direct search-by-order-number endpoint,
         so we fetch recent orders and filter by the name field.
 
         Args:
@@ -267,7 +265,6 @@ class ShopifyClient:
                 self._parse_order(o) for o in data.get("orders", [])
             ]
 
-            # Match by order number — Shopify stores it as "#1001"
             matches = [
                 o for o in all_orders
                 if o.order_number.lstrip("#") == order_number
@@ -281,56 +278,6 @@ class ShopifyClient:
         except RuntimeError as e:
             logger.error(f"Failed to search orders by number: {e}")
             return []
-
-    def get_product_by_name(
-        self, product_name: str
-    ) -> Optional[dict]:
-        """
-        Fetches basic product info by searching product title.
-
-        Args:
-            product_name: Product name or partial name.
-
-        Returns:
-            Dict with title, status, variants. None if not found.
-        """
-        logger.info(f"Fetching product by name: {product_name}")
-
-        try:
-            data = self._get(
-                f"/products.json?title={product_name}&limit=5"
-            )
-            products = data.get("products", [])
-
-            if not products:
-                logger.warning(
-                    f"No product found matching: {product_name}"
-                )
-                return None
-
-            product = products[0]
-
-            return {
-                "id": product["id"],
-                "title": product["title"],
-                "status": product["status"],
-                "variants": [
-                    {
-                        "title": v["title"],
-                        "price": v["price"],
-                        "inventory_quantity": v.get(
-                            "inventory_quantity", 0
-                        ),
-                    }
-                    for v in product.get("variants", [])
-                ],
-            }
-
-        except RuntimeError as e:
-            logger.error(
-                f"Failed to fetch product '{product_name}': {e}"
-            )
-            return None
 
     def create_refund(
         self,
@@ -383,6 +330,86 @@ class ShopifyClient:
                 f"Failed to create refund for order {order_id}: {e}"
             )
             return False
+
+    # ------------------------------------------------------------------
+    # Product methods
+    # ------------------------------------------------------------------
+
+    def get_all_products(self) -> list[dict]:
+        """
+        Fetches all products in the store.
+
+        Returns a lightweight list (id + title + status only).
+        The LLM uses this catalog to identify which product
+        the customer is referring to before fetching full details.
+
+        Returns:
+            List of dicts with id, title, status.
+            Empty list if none found or request fails.
+        """
+        logger.info("Fetching all products")
+
+        try:
+            data = self._get(
+                "/products.json?limit=250&fields=id,title,status"
+            )
+            products = data.get("products", [])
+            logger.info(f"Fetched {len(products)} products")
+            return [
+                {
+                    "id": p["id"],
+                    "title": p["title"],
+                    "status": p["status"],
+                }
+                for p in products
+            ]
+
+        except RuntimeError as e:
+            logger.error(f"Failed to fetch products: {e}")
+            return []
+
+    def get_product_by_id(
+        self, product_id: int
+    ) -> Optional[dict]:
+        """
+        Fetches detailed product info by exact Shopify product ID.
+
+        Called after the LLM has identified which product the
+        customer means from the catalog returned by get_all_products().
+
+        Args:
+            product_id: Exact Shopify product ID.
+
+        Returns:
+            Dict with title, status, variants. None if not found.
+        """
+        logger.info(f"Fetching product by ID: {product_id}")
+
+        try:
+            data = self._get(f"/products/{product_id}.json")
+            product = data["product"]
+
+            return {
+                "id": product["id"],
+                "title": product["title"],
+                "status": product["status"],
+                "variants": [
+                    {
+                        "title": v["title"],
+                        "price": v["price"],
+                        "inventory_quantity": v.get(
+                            "inventory_quantity", 0
+                        ),
+                    }
+                    for v in product.get("variants", [])
+                ],
+            }
+
+        except RuntimeError as e:
+            logger.error(
+                f"Failed to fetch product {product_id}: {e}"
+            )
+            return None
 
     # ------------------------------------------------------------------
     # Private parsing helpers
