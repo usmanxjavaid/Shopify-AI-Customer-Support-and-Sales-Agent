@@ -1,50 +1,59 @@
 """
 config.py
 ---------
-Central configuration loader for the entire project
+Central configuration loader for the entire project.
 
 This is the ONLY file that reads from .env directly.
-Every other module imports `settings` from here instead calling os.getenv() function directly.
+Every other module imports `settings` from here instead
+of calling os.getenv() on their own.
 
-Why: if we want to change variable name, we can change it in one file, not scattered across 10 files.
+Why: if a variable name changes, we fix it in one place,
+not scattered across 10 files.
 """
 
 import os
 from dotenv import load_dotenv
 
-# load the .env file into evironment variables
+# Load the .env file into environment variables
 load_dotenv()
 
-class Settings():
+
+class Settings:
     """
     Holds all configuration values for the project.
-    Reads from environment variables (set via .env file)
+    Reads from environment variables (set via .env file).
     """
 
     # --- Shopify ---
-    SHOPIFY_STORE_DOMAIN: str = os.getenv('SHOPIFY_STORE_DOMAIN', '')
-    SHOPIFY_CLIENT_ID: str = os.getenv('SHOPIFY_CLIENT_ID', '')
-    SHOPIFY_CLIENT_SECRET: str = os.getenv('SHOPIFY_CLIENT_SECRET', '')
-    SHOPIFY_API_VERSION: str = os.getenv('SHOPIFY_API_VERSION', '')
+    SHOPIFY_STORE_DOMAIN: str = os.getenv("SHOPIFY_STORE_DOMAIN", "")
+    SHOPIFY_CLIENT_ID: str = os.getenv("SHOPIFY_CLIENT_ID", "")
+    SHOPIFY_CLIENT_SECRET: str = os.getenv("SHOPIFY_CLIENT_SECRET", "")
+    SHOPIFY_API_VERSION: str = os.getenv("SHOPIFY_API_VERSION", "2024-10")
 
     # --- Groq LLM ---
-    GROQ_API_KEY: str = os.getenv('GROQ_API_KEY', '')
-    GROQ_MODEL: str = os.getenv('GROQ_MODEL', '')
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     # --- Telegram ---
-    TELEGRAM_BOT_TOKEN: str = os.getenv('TELEGRAM_BOT_TOKEN', '')
-    OWNER_TELEGRAM_CHAT_ID: str = os.getenv('OWNER_TELEGRAM_CHAT_ID', '')
+    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    OWNER_TELEGRAM_CHAT_ID: str = os.getenv("OWNER_TELEGRAM_CHAT_ID", "")
 
-    # --- Buiness Rules (used by guardrails) ---
-    # Maximun number of days since order fulfillment to allow auto-refund
-    REFUND_MAX_DYAS: int = int(os.getenv('REFUND_MAX_DAYS', '30'))
+    # --- Redis (Upstash) — conversation memory ---
+    UPSTASH_REDIS_REST_URL: str = os.getenv("UPSTASH_REDIS_REST_URL", "")
+    UPSTASH_REDIS_REST_TOKEN: str = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
 
-    # Maximm order amount (USD) to allow auto-refund
-    REFUND_MAX_AMOUNT: float = float(os.getenv('REFUND_MAX_AMOUNT', '100'))
+    # --- PostgreSQL (Neon) — persistence, audit logs ---
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+
+    # --- Business Rules (used by guardrails) ---
+    # Maximum number of days since order fulfillment to allow auto-refund
+    REFUND_MAX_DAYS: int = int(os.getenv("REFUND_MAX_DAYS", "30"))
+    # Maximum order amount (USD) to allow auto-refund without human approval
+    REFUND_MAX_AMOUNT: float = float(os.getenv("REFUND_MAX_AMOUNT", "100"))
 
     def validate(self):
         """
-        call this once at startup to detect missing critical settings early,
+        Call this once at startup to catch missing critical settings early,
         rather than getting a confusing error deep inside a function later.
         """
         required = {
@@ -54,17 +63,13 @@ class Settings():
             "GROQ_API_KEY": self.GROQ_API_KEY,
             "TELEGRAM_BOT_TOKEN": self.TELEGRAM_BOT_TOKEN,
         }
-
         missing = [key for key, value in required.items() if not value]
         if missing:
             raise EnvironmentError(
-                f"Missing required environment variable: {', '.join(missing)}\n"
+                f"Missing required environment variables: {', '.join(missing)}\n"
                 f"Please check your .env file."
             )
 
+
 # Single shared instance — import this everywhere
 settings = Settings()
-
-
-
-
