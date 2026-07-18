@@ -12,3 +12,6 @@ python-telegram-bot
 
 # Data validation
 pydantic
+
+# conversation memory
+upstash-redis

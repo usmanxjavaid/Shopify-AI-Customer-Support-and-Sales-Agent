@@ -30,7 +30,11 @@ class Settings:
     SHOPIFY_CLIENT_SECRET: str = os.getenv("SHOPIFY_CLIENT_SECRET", "")
     SHOPIFY_API_VERSION: str = os.getenv("SHOPIFY_API_VERSION", "2024-10")
 
-    # --- Groq LLM ---
+    # --- OpenRouter LLM (primary) ---
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
+    OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat")
+
+    # --- Groq LLM (fallback) ---
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
@@ -60,7 +64,7 @@ class Settings:
             "SHOPIFY_STORE_DOMAIN": self.SHOPIFY_STORE_DOMAIN,
             "SHOPIFY_CLIENT_ID": self.SHOPIFY_CLIENT_ID,
             "SHOPIFY_CLIENT_SECRET": self.SHOPIFY_CLIENT_SECRET,
-            "GROQ_API_KEY": self.GROQ_API_KEY,
+            "GROQ_API_KEY": self.OPENROUTER_API_KEY,
             "TELEGRAM_BOT_TOKEN": self.TELEGRAM_BOT_TOKEN,
         }
         missing = [key for key, value in required.items() if not value]
