@@ -3,20 +3,14 @@ logger.py
 ---------
 Central logging configuration for the entire project.
 
-Every module imports the logger from here:
-    from logger import get_logger
-    logger = get_logger(__name__)
+Two independent log levels:
+    CONSOLE_LOG_LEVEL - what you see in the terminal (default: INFO)
+    FILE_LOG_LEVEL    - what gets written to logs/agent.log (default: DEBUG)
 
-Two outputs:
-    1. Console  — colored, human-readable output while developing/running
-    2. File     — logs/agent.log, permanent record for debugging
-
-Log levels (in order of severity):
-    DEBUG    → detailed internal info (only shown in development)
-    INFO     → normal operations ("order fetched", "message received")
-    WARNING  → something unexpected but not breaking ("scope empty")
-    ERROR    → something broke and needs attention
-    CRITICAL → something broke so badly the app can't continue
+This means the log FILE always captures full detail for debugging,
+while the terminal stays clean during normal operation. No need to
+toggle anything — just check logs/agent.log when you need DEBUG detail,
+regardless of what LOG_LEVEL your console is set to.
 """
 
 import logging
@@ -24,12 +18,12 @@ import os
 from logging.handlers import RotatingFileHandler
 
 
-# --- Settings ---
 LOG_DIR = "logs"
 LOG_FILE = os.path.join(LOG_DIR, "agent.log")
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
-# Format: timestamp | level | module name | message
+CONSOLE_LOG_LEVEL = os.getenv("CONSOLE_LOG_LEVEL", "INFO").upper()
+FILE_LOG_LEVEL = os.getenv("FILE_LOG_LEVEL", "DEBUG").upper()
+
 LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -38,44 +32,39 @@ def get_logger(name: str) -> logging.Logger:
     """
     Returns a logger for the given module name.
 
-    Usage in any file:
+    Console shows CONSOLE_LOG_LEVEL and above.
+    File (logs/agent.log) always captures FILE_LOG_LEVEL and above,
+    independent of what the console is showing.
+
+    Usage:
         from logger import get_logger
         logger = get_logger(__name__)
-        logger.info("Something happened")
-        logger.error("Something broke")
-
-    Args:
-        name: typically __name__ of the calling module,
-              so logs show exactly which file the message came from
-
-    Returns:
-        Configured logger instance
+        logger.debug("Detailed info -> file only, unless console is DEBUG too")
+        logger.info("Normal info -> shows in both by default")
     """
     logger = logging.getLogger(name)
 
-    # Avoid adding duplicate handlers if get_logger is called multiple times
     if logger.handlers:
         return logger
 
-    logger.setLevel(LOG_LEVEL)
+    # Logger itself must allow the lowest level any handler needs
+    logger.setLevel("DEBUG")
 
     formatter = logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT)
 
-    # --- Handler 1: Console output ---
     console_handler = logging.StreamHandler()
+    console_handler.setLevel(CONSOLE_LOG_LEVEL)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # --- Handler 2: File output (rotating) ---
-    # RotatingFileHandler caps the log file at 5MB, keeps 3 backups
-    # so logs never fill up your disk on a long-running bot
     os.makedirs(LOG_DIR, exist_ok=True)
     file_handler = RotatingFileHandler(
         LOG_FILE,
-        maxBytes=5 * 1024 * 1024,  # 5 MB
+        maxBytes=5 * 1024 * 1024,
         backupCount=3,
         encoding="utf-8",
     )
+    file_handler.setLevel(FILE_LOG_LEVEL)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 

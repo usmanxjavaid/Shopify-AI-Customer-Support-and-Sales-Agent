@@ -222,6 +222,8 @@ def handle_message(msg: NormalizedMessage) -> AgentResponse:
         choice = response["choices"][0]
         message = choice["message"]
 
+        logger.debug(f"LLM raw message: {message}")
+
         # Case 1: LLM wants to call a tool
         if message.get("tool_calls"):
             # Append the assistant's tool-call message to context

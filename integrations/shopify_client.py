@@ -92,7 +92,7 @@ class ShopifyClient:
 
         try:
             response = requests.post(
-                token_url, data=payload, timeout=10
+                token_url, data=payload, timeout=30
             )
             response.raise_for_status()
             data = response.json()
@@ -143,7 +143,7 @@ class ShopifyClient:
 
         try:
             response = requests.get(
-                url, headers=self._headers(), timeout=10
+                url, headers=self._headers(), timeout=30
             )
             response.raise_for_status()
             return response.json()
@@ -177,13 +177,16 @@ class ShopifyClient:
 
         try:
             response = requests.post(
-                url, headers=self._headers(), json=payload, timeout=10
+                url, headers=self._headers(), json=payload, timeout=30
             )
             response.raise_for_status()
             return response.json()
 
         except requests.exceptions.HTTPError as e:
-            logger.error(f"Shopify API HTTP error: {e} | URL: {url}")
+            logger.error(
+                f"Shopify API HTTP error: {e} | URL: {url} | "
+                f"Response body: {response.text}"
+            )
             raise RuntimeError(f"Shopify API error: {e}")
 
         except requests.exceptions.RequestException as e:
@@ -278,7 +281,41 @@ class ShopifyClient:
         except RuntimeError as e:
             logger.error(f"Failed to search orders by number: {e}")
             return []
+        
+    def _get_original_transaction_id(self, order_id: int) -> Optional[int]:
+        """
+        Fetches the original payment transaction ID for an order.
 
+        Shopify requires refunds to reference the original transaction
+        via parent_id, unless using store-credit/exchange-credit/cash
+        gateways. Since our test store uses a real payment gateway,
+        we need this ID.
+
+        Args:
+            order_id: Shopify internal order ID.
+
+        Returns:
+            The transaction ID of the original successful payment,
+            or None if not found.
+        """
+        logger.debug(f"Fetching transactions for order {order_id}")
+
+        try:
+            data = self._get(f"/orders/{order_id}/transactions.json")
+            transactions = data.get("transactions", [])
+
+            # Find the original successful sale/capture transaction
+            for txn in transactions:
+                if txn.get("kind") in ("sale", "capture") and txn.get("status") == "success":
+                    return txn["id"]
+
+            logger.warning(f"No original transaction found for order {order_id}")
+            return None
+
+        except RuntimeError as e:
+            logger.error(f"Failed to fetch transactions for order {order_id}: {e}")
+            return None
+    
     def create_refund(
         self,
         order_id: int,
@@ -289,6 +326,8 @@ class ShopifyClient:
         Issues a refund for an order via Shopify API.
 
         Only called after guardrails have confirmed eligibility.
+        Automatically looks up the original payment transaction,
+        since Shopify requires refunds to reference it via parent_id.
 
         Args:
             order_id: Shopify internal order ID.
@@ -302,12 +341,22 @@ class ShopifyClient:
             f"Creating refund | order_id={order_id} amount={amount}"
         )
 
+        parent_id = self._get_original_transaction_id(order_id)
+
+        if parent_id is None:
+            logger.error(
+                f"Cannot create refund for order {order_id} — "
+                f"no original transaction found"
+            )
+            return False
+
         payload = {
             "refund": {
                 "notify": True,
                 "note": reason,
                 "transactions": [
                     {
+                        "parent_id": parent_id,
                         "kind": "refund",
                         "amount": str(amount),
                         "gateway": "manual",
