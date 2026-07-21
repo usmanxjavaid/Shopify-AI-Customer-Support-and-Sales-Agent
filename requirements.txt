@@ -15,3 +15,9 @@ pydantic
 
 # conversation memory
 upstash-redis
+
+# Sqlalchemy
+sqlalchemy
+
+# PostgreSQL driver
+psycopg2-binary

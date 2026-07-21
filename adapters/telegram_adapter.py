@@ -27,6 +27,7 @@ from config import settings
 from core.models import NormalizedMessage
 from telegram.ext import MessageHandler, filters, CommandHandler
 from core.orchestrator import handle_message
+from persistence.db import init_db
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -256,6 +257,7 @@ def run() -> None:
     for new messages — simplest setup, no public URL/webhook needed.
     Good for development and small-scale production use.
     """
+    init_db()
     logger.info("Starting Telegram bot...")
 
     app = (

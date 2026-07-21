@@ -21,11 +21,11 @@ so we can call either with the same request structure.
 import json
 import requests
 from typing import Optional
-
 from config import settings
 from core.models import NormalizedMessage, AgentResponse
 from core.prompts import SYSTEM_PROMPT
 from core.tool_schemas import TOOL_SCHEMAS
+from persistence.audit_log import log_tool_call, log_escalation
 from core import memory
 from logger import get_logger
 
@@ -151,33 +151,47 @@ def _call_llm(messages: list[dict]) -> Optional[dict]:
 # Tool execution
 # ------------------------------------------------------------------
 
-def _execute_tool(tool_name: str, arguments: dict) -> str:
+def _execute_tool(
+    tool_name: str, arguments: dict, channel: str, user_id: str
+) -> str:
     """
     Executes a tool by name with the given arguments.
+
+    Logs every execution to the permanent audit trail, regardless
+    of success or failure.
 
     Args:
         tool_name: Name of the tool the LLM requested.
         arguments: Parsed arguments dict from the LLM's tool call.
+        channel:   Which channel this request came from.
+        user_id:   The user's stable ID within that channel.
 
     Returns:
-        The tool's plain text result, or an error message if the
-        tool doesn't exist or raised an exception.
+        The tool's plain text result, or an error message.
     """
     func = TOOL_FUNCTIONS.get(tool_name)
 
     if func is None:
         logger.error(f"LLM requested unknown tool: {tool_name}")
-        return f"Error: tool '{tool_name}' does not exist."
+        result = f"Error: tool '{tool_name}' does not exist."
+        log_tool_call(channel, user_id, tool_name, arguments, result, success=False)
+        return result
 
     try:
         logger.info(f"Executing tool: {tool_name} | args: {arguments}")
         result = func(**arguments)
+        log_tool_call(channel, user_id, tool_name, arguments, result, success=True)
+
+        if tool_name == "escalate_to_human":
+            log_escalation(channel, user_id, arguments.get("reason", ""))
+
         return result
 
     except Exception as e:
         logger.error(f"Tool '{tool_name}' raised an exception: {e}")
-        return f"Error executing {tool_name}: {e}"
-
+        result = f"Error executing {tool_name}: {e}"
+        log_tool_call(channel, user_id, tool_name, arguments, result, success=False)
+        return result
 
 # ------------------------------------------------------------------
 # Main orchestration loop
@@ -237,7 +251,9 @@ def handle_message(msg: NormalizedMessage) -> AgentResponse:
                 if tool_name == "escalate_to_human":
                     escalated = True
 
-                tool_result = _execute_tool(tool_name, tool_args)
+                tool_result = _execute_tool(
+                    tool_name, tool_args, msg.channel, msg.user_id
+                )
 
                 # Feed the tool result back into the conversation
                 messages.append({
