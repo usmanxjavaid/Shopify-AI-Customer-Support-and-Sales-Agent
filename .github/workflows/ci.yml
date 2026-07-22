@@ -1,0 +1,39 @@
+# ------------------------------------------------------------------
+# .github/workflows/ci.yml
+# ------------------------------------------------------------------
+# Runs automatically on every push and pull request.
+# Installs dependencies and runs our pytest suite — catches
+# regressions in guardrail logic before they reach production.
+#
+# Only runs tests that don't need live credentials (Shopify, LLM,
+# Redis, Postgres) — those need real secrets we don't expose to CI.
+# ------------------------------------------------------------------
+
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+      - name: Run guardrail tests
+        run: pytest tests/test_guardrails.py -v

@@ -22,4 +22,6 @@ psycopg2-binary
 
 # fastapi and uvicorn
 fastapi
-uvicorn
+
+# pytest
+pytest
