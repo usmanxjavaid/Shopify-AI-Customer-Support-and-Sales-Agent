@@ -1,0 +1,30 @@
+# ------------------------------------------------------------------
+# docker-compose.yml
+# ------------------------------------------------------------------
+# Runs both agent processes from the same image:
+#   - telegram_bot: polls Telegram for messages
+#   - web_server:   serves the FastAPI app for the web widget
+#
+# Both share the same .env file for configuration/secrets.
+# ------------------------------------------------------------------
+
+version: "3.9"
+
+services:
+  telegram_bot:
+    build: .
+    container_name: velvora_telegram_bot
+    command: python -m adapters.telegram_adapter
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  web_server:
+    build: .
+    container_name: velvora_web_server
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: unless-stopped

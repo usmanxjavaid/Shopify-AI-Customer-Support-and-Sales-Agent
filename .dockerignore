@@ -1,0 +1,24 @@
+# Virtual environment
+venv/
+myenv/
+
+# Environment secrets — passed at runtime, never baked into image
+.env
+
+# Git
+.git/
+.gitignore
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+logs/
+
+# IDE
+.vscode/
+
+# Test/debug files
+test_*.py
