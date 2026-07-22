@@ -38,6 +38,7 @@ from tools.shopify_tools import (
     get_order_status,
     get_all_products,
     get_product_details,
+    verify_customer_email,
     initiate_refund,
     escalate_to_human,
 )
@@ -46,6 +47,7 @@ TOOL_FUNCTIONS = {
     "get_order_status": get_order_status,
     "get_all_products": get_all_products,
     "get_product_details": get_product_details,
+    "verify_customer_email": verify_customer_email,
     "initiate_refund": initiate_refund,
     "escalate_to_human": escalate_to_human,
 }

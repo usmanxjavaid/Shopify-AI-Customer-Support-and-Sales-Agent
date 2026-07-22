@@ -18,6 +18,8 @@ upstash-redis
 
 # Sqlalchemy
 sqlalchemy
-
-# PostgreSQL driver
 psycopg2-binary
+
+# fastapi and uvicorn
+fastapi
+uvicorn

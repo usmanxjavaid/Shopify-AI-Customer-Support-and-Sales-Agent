@@ -204,17 +204,77 @@ def get_product_details(product_id: int) -> str:
             "Please try again in a moment."
         )
 
+def verify_customer_email(order_number: str, email: str) -> str:
+    """
+    Verifies that the given email matches the customer email on file
+    for a specific order. Use this BEFORE processing a refund, to
+    confirm the person chatting is actually the customer who placed
+    the order.
+
+    Args:
+        order_number: The order number to verify against.
+        email:        The email the customer provided in chat.
+
+    Returns:
+        "VERIFIED" if the email matches the order's customer email.
+        "NOT_VERIFIED: <reason>" if it doesn't match or can't be checked.
+    """
+    cleaned_order = order_number.strip().lstrip("#").strip()
+    cleaned_email = email.strip().lower()
+
+    logger.info(
+        f"Verifying email for order #{cleaned_order} | "
+        f"provided email: {cleaned_email}"
+    )
+
+    try:
+        orders = _client.get_orders_by_number(cleaned_order)
+
+        if not orders:
+            return f"NOT_VERIFIED: Order #{cleaned_order} not found."
+
+        order = orders[0]
+
+        if not order.customer_email:
+            logger.warning(
+                f"Order #{cleaned_order} has no email on file"
+            )
+            return (
+                f"NOT_VERIFIED: Order #{cleaned_order} has no email on "
+                f"file to verify against. Escalate to a human."
+            )
+
+        if order.customer_email.strip().lower() == cleaned_email:
+            logger.info(f"Email verified for order #{cleaned_order}")
+            return "VERIFIED"
+
+        logger.warning(
+            f"Email mismatch for order #{cleaned_order}: "
+            f"provided '{cleaned_email}' vs "
+            f"actual '{order.customer_email}'"
+        )
+        return (
+            "NOT_VERIFIED: The email provided does not match our "
+            "records for this order."
+        )
+
+    except Exception as e:
+        logger.error(f"Error verifying email for #{cleaned_order}: {e}")
+        return "NOT_VERIFIED: An error occurred during verification."
 
 # ------------------------------------------------------------------
 # Refund tools
 # ------------------------------------------------------------------
 
-def initiate_refund(order_number: str, reason: str) -> str:
+def initiate_refund(
+    order_number: str, reason: str, verified_email: str
+) -> str:
     """
     Attempts to initiate a refund for an order.
 
-    Use this when a customer explicitly requests a refund
-    and you have confirmed their order number.
+    REQUIRES identity verification first. You must call
+    verify_customer_email and receive "VERIFIED" before ever
+    calling this tool. Pass the same email that was verified.
 
     Guardrails run automatically inside this tool. If the order
     does not meet refund policy requirements, the refund will NOT
@@ -222,8 +282,11 @@ def initiate_refund(order_number: str, reason: str) -> str:
     Always follow that instruction — never try to override it.
 
     Args:
-        order_number: The order number to refund e.g. "1001".
-        reason:       The customer's stated reason for the refund.
+        order_number:   The order number to refund e.g. "1001".
+        reason:         The customer's stated reason for the refund.
+        verified_email: The email that was confirmed via
+                        verify_customer_email. Required — do not
+                        guess or skip this.
 
     Returns:
         Plain text result — either refund confirmation or
@@ -231,11 +294,11 @@ def initiate_refund(order_number: str, reason: str) -> str:
     """
     cleaned = order_number.strip().lstrip("#").strip()
     logger.info(
-        f"Refund requested for order #{cleaned} | reason: {reason}"
+        f"Refund requested for order #{cleaned} | reason: {reason} | "
+        f"claimed verified email: {verified_email}"
     )
 
     try:
-        # Step 1: fetch the order
         orders = _client.get_orders_by_number(cleaned)
 
         if not orders:
@@ -246,7 +309,21 @@ def initiate_refund(order_number: str, reason: str) -> str:
 
         order = orders[0]
 
-        # Step 2: run guardrails — non-negotiable
+        # Re-verify server-side — never trust the LLM's claim alone
+        if (
+            not order.customer_email
+            or order.customer_email.strip().lower()
+            != verified_email.strip().lower()
+        ):
+            logger.warning(
+                f"Refund blocked — email verification failed for "
+                f"order #{cleaned}"
+            )
+            return (
+                "REFUND_NOT_ELIGIBLE: Identity could not be verified "
+                "for this order. Please escalate to a human agent."
+            )
+
         eligibility = check_refund_eligibility(
             order_total=order.total_price,
             order_fulfilled_at=order.created_at,
@@ -264,7 +341,6 @@ def initiate_refund(order_number: str, reason: str) -> str:
                 f"Please escalate this to a human agent."
             )
 
-        # Step 3: issue the refund
         success = _client.create_refund(
             order_id=order.order_id,
             amount=order.total_price,

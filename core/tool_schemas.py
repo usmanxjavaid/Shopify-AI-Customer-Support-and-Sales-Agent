@@ -83,12 +83,39 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "verify_customer_email",
+            "description": (
+                "Verify that a customer's email matches the order "
+                "they're asking about. ALWAYS call this and get "
+                "'VERIFIED' before calling initiate_refund. If the "
+                "customer hasn't given their email yet, ask for it first."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_number": {
+                        "type": "string",
+                        "description": "The order number to verify, e.g. '1001'.",
+                    },
+                    "email": {
+                        "type": "string",
+                        "description": "The email address the customer provided.",
+                    },
+                },
+                "required": ["order_number", "email"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "initiate_refund",
             "description": (
-                "Attempt to process a refund for an order. Automatically "
-                "checks eligibility against store policy. If not eligible, "
-                "returns REFUND_NOT_ELIGIBLE and you must escalate to a "
-                "human next."
+                "Attempt to process a refund for an order. REQUIRES "
+                "identity verification first via verify_customer_email. "
+                "Automatically checks refund eligibility against store "
+                "policy. If not eligible, returns REFUND_NOT_ELIGIBLE "
+                "and you must escalate to a human next."
             ),
             "parameters": {
                 "type": "object",
@@ -101,8 +128,15 @@ TOOL_SCHEMAS = [
                         "type": "string",
                         "description": "The customer's stated reason for the refund.",
                     },
+                    "verified_email": {
+                        "type": "string",
+                        "description": (
+                            "The email that was confirmed VERIFIED via "
+                            "verify_customer_email. Required."
+                        ),
+                    },
                 },
-                "required": ["order_number", "reason"],
+                "required": ["order_number", "reason", "verified_email"],
             },
         },
     },
