@@ -15,16 +15,33 @@ These are two independent processes since Telegram uses polling
 listening for requests.
 """
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from adapters.admin_routes import router as admin_router
 from adapters.web_adapter import router as web_router
 from persistence.db import init_db
 from logger import get_logger
 
 logger = get_logger(__name__)
 
-app = FastAPI(title="Velvora AI Support Agent")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Modern replacement for the deprecated @app.on_event("startup").
+
+    Code before `yield` runs once on startup (ensures DB tables exist).
+    Code after `yield` would run on shutdown (nothing needed there yet).
+    """
+    init_db()
+    logger.info("FastAPI app started, database ready")
+    yield
+    logger.info("FastAPI app shutting down")
+
+
+app = FastAPI(title="Velvora AI Support Agent", lifespan=lifespan)
 
 # Allow the widget to be embedded on any storefront domain.
 # In real production, restrict this to your actual store's domain
@@ -37,13 +54,7 @@ app.add_middleware(
 )
 
 app.include_router(web_router)
-
-
-@app.on_event("startup")
-def on_startup():
-    """Ensures database tables exist before accepting any requests."""
-    init_db()
-    logger.info("FastAPI app started, database ready")
+app.include_router(admin_router)
 
 
 @app.get("/health")

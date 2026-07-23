@@ -26,6 +26,7 @@ from core.models import NormalizedMessage, AgentResponse
 from core.prompts import SYSTEM_PROMPT
 from core.tool_schemas import TOOL_SCHEMAS
 from persistence.audit_log import log_tool_call, log_escalation
+from tools.knowledge_tools import search_knowledge_base
 from core import memory
 from logger import get_logger
 
@@ -41,6 +42,7 @@ from tools.shopify_tools import (
     verify_customer_email,
     initiate_refund,
     escalate_to_human,
+    "search_knowledge_base": search_knowledge_base,
 )
 
 TOOL_FUNCTIONS = {

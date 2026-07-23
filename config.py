@@ -52,6 +52,9 @@ class Settings:
     # --- PostgreSQL (Neon) — persistence, audit logs ---
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 
+    # --- Admin Dashboard ---
+    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
+
     # --- Business Rules (used by guardrails) ---
     # Maximum number of days since order fulfillment to allow auto-refund
     REFUND_MAX_DAYS: int = int(os.getenv("REFUND_MAX_DAYS", "30"))

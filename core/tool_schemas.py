@@ -18,6 +18,29 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "search_knowledge_base",
+            "description": (
+                "Search the store's policy documents for answers about "
+                "shipping times, return windows, warranty coverage, "
+                "payment methods, sizing guides, or general FAQ. Use "
+                "this for any policy question not answerable via order "
+                "or product lookup tools."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "The customer's question, in their own words.",
+                    }
+                },
+                "required": ["question"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_order_status",
             "description": (
                 "Look up the current status of a customer's order "

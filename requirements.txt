@@ -20,8 +20,20 @@ upstash-redis
 sqlalchemy
 psycopg2-binary
 
+# For RAG
+chromadb
+sentence-transformers
+pypdf
+python-docx
+
 # fastapi and uvicorn
 fastapi
+
+# Secure session cookies
+itsdangerous
+
+#python mulipart
+python-multipart
 
 # pytest
 pytest

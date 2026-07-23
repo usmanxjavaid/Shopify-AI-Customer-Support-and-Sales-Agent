@@ -8,8 +8,6 @@
 # Both share the same .env file for configuration/secrets.
 # ------------------------------------------------------------------
 
-version: "3.9"
-
 services:
   telegram_bot:
     build: .
