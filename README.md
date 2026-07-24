@@ -24,42 +24,55 @@ A production-grade AI customer support agent for Shopify stores — combining re
 
 ## 📁 Project Structure
 
-├── adapters/
-│ ├── telegram_adapter.py → Telegram bot (text + voice)
-│ ├── web_adapter.py → FastAPI endpoint for the web widget
-│ └── admin_routes.py → password-protected admin dashboard
-├── core/
-│ ├── orchestrator.py → tool-calling agent loop (LLM <-> tools)
-│ ├── guardrails.py → refund eligibility rules (pure logic)
-│ ├── memory.py → Redis-backed conversation history
-│ ├── prompts.py → system prompt
-│ ├── tool_schemas.py → tool definitions for the LLM
-│ └── models.py → shared data shapes
-├── tools/
-│ ├── shopify_tools.py → get_order_status, initiate_refund, verify_customer_email, etc.
-│ └── knowledge_tools.py → search_knowledge_base
-├── integrations/
-│ └── shopify_client.py → Shopify Admin API wrapper
-├── knowledge_base/
-│ ├── document_readers.py → PDF/DOCX/TXT → raw text
-│ ├── chunker.py → raw text → overlapping chunks
-│ ├── vector_store.py → chunks → ChromaDB (add/query/clear)
-│ └── indexer.py → orchestrates the full indexing pipeline
-├── knowledge/ → store policy documents live here (PDF/DOCX/TXT)
-├── persistence/
-│ ├── db.py → PostgreSQL table definitions
-│ ├── audit_log.py → audit logging (write)
-│ └── queries.py → dashboard queries (read)
-├── tests/
-│ └── test_guardrails.py → automated pytest suite
-├── config.py
-├── logger.py
-├── main.py → FastAPI entry point
-├── build_index.py → rebuild the knowledge base index
-├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-└── .github/workflows/ci.yml
+```
+adapters/
+    telegram_adapter.py    - Telegram bot (text + voice)
+    web_adapter.py          - FastAPI endpoint for the web widget
+    admin_routes.py          - password-protected admin dashboard
+
+core/
+    orchestrator.py         - tool-calling agent loop (LLM <-> tools)
+    guardrails.py             - refund eligibility rules (pure logic)
+    memory.py                  - Redis-backed conversation history
+    prompts.py                  - system prompt
+    tool_schemas.py               - tool definitions for the LLM
+    models.py                      - shared data shapes
+
+tools/
+    shopify_tools.py        - get_order_status, initiate_refund, verify_customer_email, etc.
+    knowledge_tools.py        - search_knowledge_base
+
+integrations/
+    shopify_client.py       - Shopify Admin API wrapper
+
+knowledge_base/
+    document_readers.py     - PDF/DOCX/TXT to raw text
+    chunker.py                - raw text to overlapping chunks
+    vector_store.py             - chunks to ChromaDB (add/query/clear)
+    indexer.py                    - orchestrates the full indexing pipeline
+
+knowledge/                  - store policy documents live here (PDF/DOCX/TXT)
+
+persistence/
+    db.py                    - PostgreSQL table definitions
+    audit_log.py               - audit logging (write)
+    queries.py                   - dashboard queries (read)
+
+tests/
+    test_guardrails.py      - automated pytest suite
+
+config.py
+logger.py
+main.py                     - FastAPI entry point
+build_index.py               - rebuild the knowledge base index
+requirements.txt
+Dockerfile
+docker-compose.yml
+
+.github/
+    workflows/
+        ci.yml               - GitHub Actions test runner
+```
 
 
 ## ⚙️ Setup & Installation
@@ -144,21 +157,26 @@ Open `widget_test.html` in a browser, or embed the widget snippet into a Shopify
 
 ## 🔄 Conversation Flow
 
-Customer message (text or voice, any channel)
-↓
-Orchestrator sends message + history + tools to LLM
-↓
-LLM decides: reply directly, or call a tool
-↓
-get_order_status / get_all_products / get_product_details
-search_knowledge_base → answers from real policy documents
-verify_customer_email → initiate_refund (guardrails checked in code)
-escalate_to_human → owner notified on Telegram, logged to Postgres
-↓
-Every tool call logged to PostgreSQL for audit
-↓
-Reply sent back through the original channel (text or voice)
+```
+1. Customer sends a message (text or voice, any channel)
 
+2. Orchestrator sends message + history + tool list to the LLM
+
+3. LLM decides: reply directly, or call a tool
+
+4. Available tools:
+     - get_order_status         -> real-time order lookup
+     - get_all_products          -> product catalog
+     - get_product_details         -> pricing and stock for one product
+     - search_knowledge_base        -> answers from real policy documents
+     - verify_customer_email          -> required before any refund
+     - initiate_refund                  -> guardrails checked in code, not by the LLM
+     - escalate_to_human                  -> owner notified on Telegram, logged to Postgres
+
+5. Every tool call is logged to PostgreSQL for a full audit trail
+
+6. Final reply is sent back through the original channel (text or voice)
+```
 
 ## 🏗️ Tech Stack
 
