@@ -22,3 +22,9 @@ logs/
 
 # Test/debug files
 test_*.py
+
+# Vector database (rebuilt inside the container on startup)
+chroma_db/
+
+# HuggingFace model cache
+.cache/

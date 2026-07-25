@@ -20,6 +20,7 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
+from integrations.voice_service import transcribe_audio_bytes, synthesize_speech
 
 import requests
 from telegram import Voice
@@ -54,115 +55,6 @@ async def on_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
     await update.message.reply_text(welcome_message)
-
-async def transcribe_voice(voice: Voice, context: ContextTypes.DEFAULT_TYPE) -> str:
-    """
-    Downloads a Telegram voice message and transcribes it to text
-    using Groq's Whisper API.
-
-    Args:
-        voice:   Telegram's Voice object from the incoming message.
-        context: Telegram bot context, used to download the file.
-
-    Returns:
-        Transcribed text, or an empty string if transcription failed.
-    """
-    logger.info("Transcribing voice message")
-
-    try:
-        # Download the voice file from Telegram's servers
-        file = await context.bot.get_file(voice.file_id)
-        audio_bytes = await file.download_as_bytearray()
-
-        # Send raw .ogg bytes directly to Groq's Whisper endpoint
-        response = requests.post(
-            url="https://api.groq.com/openai/v1/audio/transcriptions",
-            headers={
-                "Authorization": f"Bearer {settings.GROQ_API_KEY}",
-            },
-            files={
-                "file": ("voice.ogg", bytes(audio_bytes), "audio/ogg"),
-            },
-            data={
-                "model": "whisper-large-v3",
-            },
-            timeout=30,
-        )
-        response.raise_for_status()
-
-        text = response.json().get("text", "").strip()
-        logger.info(f"Transcription result: {text}")
-        return text
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Voice transcription failed: {e}")
-        return ""
-    
-async def synthesize_speech(text: str) -> bytes:
-    """
-    Converts text to speech audio using Google AI Studio's TTS API.
-
-    Gemini's TTS returns raw PCM audio (16-bit, 24kHz, mono).
-    We wrap it in a proper WAV container so it's valid, playable
-    audio — raw PCM alone isn't a real file format players understand.
-
-    Args:
-        text: The text to convert to speech.
-
-    Returns:
-        WAV-formatted audio bytes, or empty bytes if synthesis failed.
-    """
-    logger.info("Synthesizing speech for reply")
-
-    try:
-        response = requests.post(
-            url=(
-                "https://generativelanguage.googleapis.com/v1beta/"
-                "models/gemini-2.5-flash-preview-tts:generateContent"
-                f"?key={settings.GOOGLE_AI_API_KEY}"
-            ),
-            json={
-                "contents": [{"parts": [{"text": text}]}],
-                "generationConfig": {
-                    "responseModalities": ["AUDIO"],
-                    "speechConfig": {
-                        "voiceConfig": {
-                            "prebuiltVoiceConfig": {"voiceName": "Kore"}
-                        }
-                    },
-                },
-            },
-            timeout=30,
-        )
-        response.raise_for_status()
-
-        data = response.json()
-        audio_b64 = (
-            data["candidates"][0]["content"]["parts"][0]
-            ["inlineData"]["data"]
-        )
-
-        import base64
-        pcm_bytes = base64.b64decode(audio_b64)
-
-        # Wrap raw PCM into a proper WAV container
-        import io
-        import wave
-
-        wav_buffer = io.BytesIO()
-        with wave.open(wav_buffer, "wb") as wav_file:
-            wav_file.setnchannels(1)        # mono
-            wav_file.setsampwidth(2)        # 16-bit
-            wav_file.setframerate(24000)    # 24kHz, Gemini's output rate
-            wav_file.writeframes(pcm_bytes)
-
-        wav_bytes = wav_buffer.getvalue()
-        logger.info("Speech synthesis succeeded (converted to WAV)")
-        return wav_bytes
-
-    except Exception as e:
-        logger.error(f"Speech synthesis failed: {e}")
-        return b""
 
 async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
@@ -216,7 +108,9 @@ async def on_voice_message(
         chat_id=update.effective_chat.id, action="typing"
     )
 
-    text = await transcribe_voice(update.message.voice, context)
+    file = await context.bot.get_file(update.message.voice.file_id)
+    audio_bytes = await file.download_as_bytearray()
+    text = await transcribe_audio_bytes(bytes(audio_bytes), filename="voice.ogg")
 
     if not text:
         await update.message.reply_text(
