@@ -42,7 +42,6 @@ from tools.shopify_tools import (
     verify_customer_email,
     initiate_refund,
     escalate_to_human,
-    "search_knowledge_base": search_knowledge_base,
 )
 
 TOOL_FUNCTIONS = {
@@ -52,6 +51,7 @@ TOOL_FUNCTIONS = {
     "verify_customer_email": verify_customer_email,
     "initiate_refund": initiate_refund,
     "escalate_to_human": escalate_to_human,
+    "search_knowledge_base": search_knowledge_base,
 }
 
 MAX_TOOL_ITERATIONS = 5
