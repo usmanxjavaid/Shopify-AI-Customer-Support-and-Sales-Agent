@@ -22,7 +22,6 @@ psycopg2-binary
 
 # For RAG
 chromadb
-sentence-transformers
 pypdf
 python-docx
 
