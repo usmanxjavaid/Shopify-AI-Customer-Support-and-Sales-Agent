@@ -15,7 +15,8 @@ internal dashboard, not a public-facing feature.
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from itsdangerous import URLSafeSerializer, BadSignature
-
+from persistence.queries import queue_human_reply
+import requests as http_requests
 from config import settings
 from persistence.queries import (
     get_summary_stats,
@@ -114,7 +115,12 @@ async def admin_dashboard(request: Request):
             <td>{e['timestamp'].strftime('%Y-%m-%d %H:%M')}</td>
             <td>{'✅ Resolved' if e['resolved'] else '⏳ Pending'}</td>
             <td>
-                {'' if e['resolved'] else f'<form method="post" action="/admin/resolve/{e["id"]}"><button>Mark resolved</button></form>'}
+                {'' if e['resolved'] else f'''
+            <form method="post" action="/admin/reply/{e["id"]}" style="display:flex; gap:6px; margin-top:4px;">
+                <input type="text" name="message" placeholder="Reply to customer..." required style="flex:1; padding:4px 8px; border-radius:4px; border:1px solid #ccc; font-size:12px;">
+                <button type="submit">Send &amp; Resolve</button>
+            </form>
+            '''}
             </td>
         </tr>
         """
@@ -193,3 +199,36 @@ async def resolve_escalation(escalation_id: int, request: Request):
 
 
 logger.debug("adapters.admin_routes loaded successfully")
+
+
+@router.post("/admin/reply/{escalation_id}")
+async def reply_to_escalation(escalation_id: int, request: Request, message: str = Form(...)):
+    """
+    Sends a human agent's reply to a customer, routed to whichever
+    channel they're actually on.
+    """
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/admin")
+
+    escalations = get_escalations(limit=200)
+    target = next((e for e in escalations if e["id"] == escalation_id), None)
+
+    if target:
+        channel = target["channel"]
+        user_id = target["user_id"]
+
+        if channel == "telegram":
+            # Deliver instantly via Telegram bot API
+            http_requests.post(
+                f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={"chat_id": user_id, "text": f"[Support Team] {message}"},
+                timeout=10,
+            )
+        else:
+            # Web (or future channels) — queue for polling delivery
+            queue_human_reply(channel, user_id, message)
+
+        mark_escalation_resolved(escalation_id)
+        logger.info(f"Human reply sent for escalation {escalation_id} via {channel}")
+
+    return RedirectResponse(url="/admin/dashboard", status_code=303)

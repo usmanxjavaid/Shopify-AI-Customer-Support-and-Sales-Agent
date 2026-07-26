@@ -17,6 +17,7 @@ import base64
 from integrations.voice_service import transcribe_audio_bytes, synthesize_speech
 from core.models import NormalizedMessage
 from core.orchestrator import handle_message
+from persistence.queries import get_undelivered_replies
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -96,3 +97,12 @@ async def chat_voice(session_id: str, audio: UploadFile = File(...)):
         "reply_audio_base64": audio_b64,
         "escalated": response.escalated,
     }
+
+@router.get("/api/chat/poll")
+async def poll_replies(session_id: str):
+    """
+    Checked periodically by the web widget to pick up any human
+    agent replies sent via the admin dashboard.
+    """
+    replies = get_undelivered_replies("web", session_id)
+    return {"messages": [r["message"] for r in replies]}

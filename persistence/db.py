@@ -73,6 +73,17 @@ escalations_table = Table(
     Column("timestamp", DateTime(timezone=True), nullable=False),
 )
 
+pending_replies_table = Table(
+    "pending_replies",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("channel", String(50), nullable=False),
+    Column("user_id", String(255), nullable=False),
+    Column("message", Text, nullable=False),
+    Column("delivered", Boolean, nullable=False, default=False),
+    Column("timestamp", DateTime(timezone=True), nullable=False),
+)
+
 
 def init_db() -> None:
     """

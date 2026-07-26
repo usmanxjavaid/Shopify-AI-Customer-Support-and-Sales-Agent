@@ -9,12 +9,60 @@ only READS and aggregates data for display purposes.
 
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func, update
-
+from persistence.db import pending_replies_table
 from persistence.db import engine, tool_calls_table, escalations_table
 from logger import get_logger
 
 logger = get_logger(__name__)
 
+
+
+def queue_human_reply(channel: str, user_id: str, message: str) -> None:
+    """
+    Queues a human agent's reply to be delivered to a customer.
+
+    For Telegram, this is typically bypassed (delivered instantly via
+    the bot API instead). For web, the widget polls and picks this up.
+    """
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                pending_replies_table.insert().values(
+                    channel=channel,
+                    user_id=user_id,
+                    message=message,
+                    delivered=False,
+                    timestamp=datetime.now(timezone.utc),
+                )
+            )
+        logger.info(f"Queued human reply for {channel}:{user_id}")
+    except Exception as e:
+        logger.error(f"Failed to queue human reply: {e}")
+
+
+def get_undelivered_replies(channel: str, user_id: str) -> list[dict]:
+    """Fetches and marks-as-delivered any pending human replies for a user."""
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(
+                select(pending_replies_table)
+                .where(pending_replies_table.c.channel == channel)
+                .where(pending_replies_table.c.user_id == user_id)
+                .where(pending_replies_table.c.delivered == False)
+                .order_by(pending_replies_table.c.timestamp.asc())
+            ).mappings().all()
+
+            if rows:
+                ids = [r["id"] for r in rows]
+                conn.execute(
+                    update(pending_replies_table)
+                    .where(pending_replies_table.c.id.in_(ids))
+                    .values(delivered=True)
+                )
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"Failed to fetch pending replies: {e}")
+        return []
 
 def get_summary_stats() -> dict:
     """
