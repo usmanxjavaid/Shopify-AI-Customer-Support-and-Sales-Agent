@@ -75,13 +75,13 @@
     #velvora-chat-messages::-webkit-scrollbar { width: 6px; }
     #velvora-chat-messages::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
 
-    .velvora-row { display: flex; }
-    .velvora-row.user { justify-content: flex-end; }
-    .velvora-row.agent { justify-content: flex-start; }
+    .velvora-row { display: flex; flex-direction: column; }
+    .velvora-row.user { align-items: flex-end; }
+    .velvora-row.agent { align-items: flex-start; }
 
     .velvora-message {
-        padding: 10px 14px; border-radius: 16px; max-width: 78%;
-        line-height: 1.45; white-space: pre-wrap; font-size: 13.5px;
+        padding: 10px 14px; border-radius: 16px; max-width: 82%;
+        line-height: 1.45; font-size: 13.5px;
     }
     .velvora-user-message {
         background: var(--v-navy); color: white; border-bottom-right-radius: 4px;
@@ -90,14 +90,46 @@
         background: white; color: #1E293B; border: 1px solid var(--v-border);
         border-bottom-left-radius: 4px;
     }
-    .velvora-message audio { display: block; margin-top: 8px; width: 100%; height: 32px; }
+    .velvora-message strong { font-weight: 700; }
+
+    .velvora-caption {
+        font-size: 11px; color: var(--v-slate); margin: 3px 4px 0; max-width: 82%;
+    }
+
+    /* Custom audio player bubble */
+    .velvora-audio-bubble {
+        display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+        border-radius: 16px; max-width: 82%; min-width: 190px;
+    }
+    .velvora-audio-bubble.user { background: var(--v-navy); border-bottom-right-radius: 4px; }
+    .velvora-audio-bubble.agent { background: white; border: 1px solid var(--v-border); border-bottom-left-radius: 4px; }
+    .velvora-play-btn {
+        width: 30px; height: 30px; border-radius: 50%; border: none; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center; cursor: pointer;
+    }
+    .velvora-audio-bubble.user .velvora-play-btn { background: rgba(255,255,255,0.18); color: white; }
+    .velvora-audio-bubble.agent .velvora-play-btn { background: var(--v-ice); color: var(--v-navy); }
+    .velvora-audio-track {
+        flex: 1; height: 4px; border-radius: 2px; position: relative; cursor: pointer;
+    }
+    .velvora-audio-bubble.user .velvora-audio-track { background: rgba(255,255,255,0.25); }
+    .velvora-audio-bubble.agent .velvora-audio-track { background: var(--v-border); }
+    .velvora-audio-progress {
+        position: absolute; left: 0; top: 0; height: 100%; border-radius: 2px; width: 0%;
+    }
+    .velvora-audio-bubble.user .velvora-audio-progress { background: var(--v-teal); }
+    .velvora-audio-bubble.agent .velvora-audio-progress { background: var(--v-teal); }
+    .velvora-audio-time {
+        font-size: 10.5px; flex-shrink: 0; min-width: 32px; text-align: right;
+    }
+    .velvora-audio-bubble.user .velvora-audio-time { color: rgba(255,255,255,0.75); }
+    .velvora-audio-bubble.agent .velvora-audio-time { color: var(--v-slate); }
 
     #velvora-typing {
-        display: none; align-items: center; gap: 4px; padding: 10px 14px;
+        display: flex; align-items: center; gap: 4px; padding: 10px 14px;
         background: white; border: 1px solid var(--v-border); border-radius: 16px;
         border-bottom-left-radius: 4px; width: fit-content;
     }
-    #velvora-typing.show { display: flex; }
     .velvora-dot {
         width: 6px; height: 6px; border-radius: 50%; background: var(--v-slate);
         animation: velvora-bounce 1.2s infinite ease-in-out;
@@ -123,12 +155,28 @@
         justify-content: center; cursor: pointer; flex-shrink: 0; transition: background 0.15s ease;
     }
     #velvora-chat-send:hover { background: var(--v-teal); }
-    #velvora-chat-mic.recording { background: var(--v-amber); animation: velvora-pulse 1s infinite; }
-    @keyframes velvora-pulse {
-        0% { box-shadow: 0 0 0 0 rgba(255,143,77,0.5); }
-        70% { box-shadow: 0 0 0 9px rgba(255,143,77,0); }
-        100% { box-shadow: 0 0 0 0 rgba(255,143,77,0); }
+
+    /* Recording bar replaces input area while recording */
+    #velvora-recording-bar {
+        display: none; align-items: center; gap: 10px; border-top: 1px solid var(--v-border);
+        padding: 12px; background: white; flex-shrink: 0;
     }
+    #velvora-recording-bar.active { display: flex; }
+    #velvora-chat-input-area.hidden { display: none; }
+    #velvora-rec-dot {
+        width: 10px; height: 10px; border-radius: 50%; background: #E11D48; flex-shrink: 0;
+        animation: velvora-rec-blink 1s infinite;
+    }
+    @keyframes velvora-rec-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+    #velvora-rec-timer { font-size: 13px; color: var(--v-navy); font-weight: 600; flex-shrink: 0; min-width: 36px; }
+    #velvora-rec-bars { flex: 1; display: flex; align-items: center; gap: 2px; height: 24px; overflow: hidden; }
+    .velvora-rec-bar { width: 3px; border-radius: 2px; background: var(--v-teal); min-height: 3px; transition: height 0.08s ease; }
+    .velvora-rec-btn {
+        width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    #velvora-rec-cancel { background: var(--v-ice); color: var(--v-slate); }
+    #velvora-rec-send { background: var(--v-teal); color: white; }
 </style>
 
 <div id="velvora-chat-bubble" onclick="velvoraToggleChat()">
@@ -136,7 +184,6 @@
         <path d="M8 10.5H16M8 14.5H13M21 12C21 16.9706 16.9706 21 12 21C10.4818 21 9.05074 20.6221 7.79654 19.9556L3 21L4.39366 16.8033C3.5157 15.4467 3 13.7893 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z"
               stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
-</div>
 </div>
 
 <div id="velvora-chat-window">
@@ -153,7 +200,7 @@
             </div>
             <div id="velvora-brand-text">
                 <span id="velvora-brand-name">Velvora Support</span>
-                <span id="velvora-brand-status"><span id="velvora-status-dot"></span>Online now</span>
+                <span id="velvora-brand-status"><span id="velvora-status-dot"></span>AI Assistant · Always online</span>
             </div>
         </div>
         <div id="velvora-header-actions">
@@ -169,9 +216,11 @@
             </button>
         </div>
     </div>
+
     <div id="velvora-chat-messages"></div>
+
     <div id="velvora-chat-input-area">
-        <button id="velvora-chat-mic" onclick="velvoraToggleRecording()" title="Record voice message">
+        <button id="velvora-chat-mic" onclick="velvoraStartRecording()" title="Record voice message">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z" stroke="white" stroke-width="1.8"/>
                 <path d="M19 11a7 7 0 01-14 0M12 18v3" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
@@ -184,46 +233,171 @@
             </svg>
         </button>
     </div>
+
+    <div id="velvora-recording-bar">
+        <span id="velvora-rec-dot"></span>
+        <span id="velvora-rec-timer">0:00</span>
+        <div id="velvora-rec-bars"></div>
+        <button class="velvora-rec-btn" id="velvora-rec-cancel" onclick="velvoraCancelRecording()" title="Cancel">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+        </button>
+        <button class="velvora-rec-btn" id="velvora-rec-send" onclick="velvoraStopAndSendRecording()" title="Send">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
+    </div>
 </div>
 
 <script>
     const VELVORA_API_BASE = "https://REPLACE_WITH_YOUR_DEPLOYED_URL";
     let velvoraSessionId = "web_" + Math.random().toString(36).substring(2, 15);
     let velvoraChatOpen = false;
+
+    // --- Recording state ---
     let velvoraMediaRecorder = null;
     let velvoraAudioChunks = [];
-    let velvoraIsRecording = false;
+    let velvoraRecStream = null;
+    let velvoraAudioCtx = null;
+    let velvoraAnalyser = null;
+    let velvoraRecTimerInterval = null;
+    let velvoraRecSeconds = 0;
+    let velvoraRecCancelled = false;
+    const VELVORA_BAR_COUNT = 28;
 
     function velvoraToggleChat() {
         velvoraChatOpen = !velvoraChatOpen;
         document.getElementById("velvora-chat-window").classList.toggle("open", velvoraChatOpen);
         if (velvoraChatOpen && document.getElementById("velvora-chat-messages").children.length === 0) {
-            velvoraAddMessage("Hi! I'm Velvora's support assistant. Type or use the mic to talk to me.", false);
+            velvoraAddText("Hi! I'm Velvora's support assistant. Type or use the mic to talk to me.", false);
         }
     }
 
     function velvoraNewConversation() {
         velvoraSessionId = "web_" + Math.random().toString(36).substring(2, 15);
         document.getElementById("velvora-chat-messages").innerHTML = "";
-        velvoraAddMessage("Started a new conversation. How can I help?", false);
+        velvoraAddText("Started a new conversation. How can I help?", false);
     }
 
-    function velvoraAddMessage(text, isUser, audioUrl) {
+    // --- Minimal, safe markdown rendering (bold only) ---
+    function velvoraRenderMarkdown(text) {
+        const escaped = text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+        return escaped
+            .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+            .replace(/\n/g, "<br>");
+    }
+
+    function velvoraAddText(text, isUser) {
         const messagesEl = document.getElementById("velvora-chat-messages");
         const row = document.createElement("div");
         row.className = "velvora-row " + (isUser ? "user" : "agent");
         const bubble = document.createElement("div");
         bubble.className = "velvora-message " + (isUser ? "velvora-user-message" : "velvora-agent-message");
-        bubble.textContent = text;
-        if (audioUrl) {
-            const audioEl = document.createElement("audio");
-            audioEl.src = audioUrl;
-            audioEl.controls = true;
-            bubble.appendChild(audioEl);
+        if (isUser) {
+            bubble.textContent = text;
+        } else {
+            bubble.innerHTML = velvoraRenderMarkdown(text);
         }
         row.appendChild(bubble);
         messagesEl.appendChild(row);
         messagesEl.scrollTop = messagesEl.scrollHeight;
+        return row;
+    }
+
+    function velvoraAddCaption(text, isUser, afterRow) {
+        const caption = document.createElement("div");
+        caption.className = "velvora-caption";
+        caption.style.alignSelf = isUser ? "flex-end" : "flex-start";
+        caption.textContent = text;
+        afterRow.appendChild(caption);
+        document.getElementById("velvora-chat-messages").scrollTop = document.getElementById("velvora-chat-messages").scrollHeight;
+    }
+
+    // --- Custom audio player ---
+    function velvoraFormatTime(sec) {
+        if (!isFinite(sec)) return "0:00";
+        const m = Math.floor(sec / 60);
+        const s = Math.floor(sec % 60).toString().padStart(2, "0");
+        return `${m}:${s}`;
+    }
+
+    function velvoraAddAudioBubble(audioUrl, isUser) {
+        const messagesEl = document.getElementById("velvora-chat-messages");
+        const row = document.createElement("div");
+        row.className = "velvora-row " + (isUser ? "user" : "agent");
+
+        const bubble = document.createElement("div");
+        bubble.className = "velvora-audio-bubble " + (isUser ? "user" : "agent");
+
+        const playBtn = document.createElement("button");
+        playBtn.className = "velvora-play-btn";
+        playBtn.innerHTML = velvoraPlayIcon();
+
+        const track = document.createElement("div");
+        track.className = "velvora-audio-track";
+        const progress = document.createElement("div");
+        progress.className = "velvora-audio-progress";
+        track.appendChild(progress);
+
+        const time = document.createElement("span");
+        time.className = "velvora-audio-time";
+        time.textContent = "0:00";
+
+        bubble.appendChild(playBtn);
+        bubble.appendChild(track);
+        bubble.appendChild(time);
+        row.appendChild(bubble);
+        messagesEl.appendChild(row);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+
+        const audio = new Audio(audioUrl);
+        let seeking = false;
+
+        audio.addEventListener("loadedmetadata", () => {
+            time.textContent = velvoraFormatTime(audio.duration);
+        });
+        audio.addEventListener("timeupdate", () => {
+            if (seeking) return;
+            const pct = (audio.currentTime / audio.duration) * 100 || 0;
+            progress.style.width = pct + "%";
+            time.textContent = velvoraFormatTime(audio.duration - audio.currentTime);
+        });
+        audio.addEventListener("ended", () => {
+            playBtn.innerHTML = velvoraPlayIcon();
+            progress.style.width = "0%";
+            time.textContent = velvoraFormatTime(audio.duration);
+        });
+
+        playBtn.addEventListener("click", () => {
+            if (audio.paused) {
+                document.querySelectorAll("audio").forEach(a => { if (a !== audio) a.pause(); });
+                audio.play();
+                playBtn.innerHTML = velvoraPauseIcon();
+            } else {
+                audio.pause();
+                playBtn.innerHTML = velvoraPlayIcon();
+            }
+        });
+
+        track.addEventListener("click", (e) => {
+            const rect = track.getBoundingClientRect();
+            const pct = (e.clientX - rect.left) / rect.width;
+            if (audio.duration) audio.currentTime = pct * audio.duration;
+        });
+
+        return row;
+    }
+
+    function velvoraPlayIcon() {
+        return '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+    }
+    function velvoraPauseIcon() {
+        return '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
     }
 
     function velvoraShowTyping(show) {
@@ -234,7 +408,7 @@
                 typingRow = document.createElement("div");
                 typingRow.className = "velvora-row agent";
                 typingRow.id = "velvora-typing-row";
-                typingRow.innerHTML = '<div id="velvora-typing" class="show"><span class="velvora-dot"></span><span class="velvora-dot"></span><span class="velvora-dot"></span></div>';
+                typingRow.innerHTML = '<div id="velvora-typing"><span class="velvora-dot"></span><span class="velvora-dot"></span><span class="velvora-dot"></span></div>';
                 messagesEl.appendChild(typingRow);
                 messagesEl.scrollTop = messagesEl.scrollHeight;
             }
@@ -243,12 +417,13 @@
         }
     }
 
+    // --- Text sending ---
     async function velvoraSendMessage() {
         const inputEl = document.getElementById("velvora-chat-input");
         const text = inputEl.value.trim();
         if (!text) return;
 
-        velvoraAddMessage(text, true);
+        velvoraAddText(text, true);
         inputEl.value = "";
         velvoraShowTyping(true);
 
@@ -260,40 +435,112 @@
             });
             const data = await response.json();
             velvoraShowTyping(false);
-            velvoraAddMessage(data.reply, false);
+            velvoraAddText(data.reply, false);
         } catch (error) {
             velvoraShowTyping(false);
-            velvoraAddMessage("Sorry, something went wrong. Please try again.", false);
+            velvoraAddText("Sorry, something went wrong. Please try again.", false);
             console.error(error);
         }
     }
 
-    async function velvoraToggleRecording() {
-        if (velvoraIsRecording) {
-            velvoraMediaRecorder.stop();
+    document.getElementById("velvora-chat-input").addEventListener("keypress", function(e) {
+        if (e.key === "Enter") velvoraSendMessage();
+    });
+
+    // --- Recording ---
+    async function velvoraStartRecording() {
+        try {
+            velvoraRecStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (err) {
+            velvoraAddText("Microphone access denied or unavailable.", false);
+            console.error(err);
             return;
         }
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            velvoraMediaRecorder = new MediaRecorder(stream);
-            velvoraAudioChunks = [];
-            velvoraMediaRecorder.ondataavailable = (e) => velvoraAudioChunks.push(e.data);
-            velvoraMediaRecorder.onstop = velvoraHandleRecordingStop;
-            velvoraMediaRecorder.start();
-            velvoraIsRecording = true;
-            document.getElementById("velvora-chat-mic").classList.add("recording");
-        } catch (err) {
-            velvoraAddMessage("Microphone access denied or unavailable.", false);
-            console.error(err);
+
+        velvoraRecCancelled = false;
+        velvoraAudioChunks = [];
+        velvoraMediaRecorder = new MediaRecorder(velvoraRecStream);
+        velvoraMediaRecorder.ondataavailable = (e) => velvoraAudioChunks.push(e.data);
+        velvoraMediaRecorder.onstop = velvoraOnRecordingStopped;
+        velvoraMediaRecorder.start();
+
+        document.getElementById("velvora-chat-input-area").classList.add("hidden");
+        document.getElementById("velvora-recording-bar").classList.add("active");
+
+        velvoraRecSeconds = 0;
+        document.getElementById("velvora-rec-timer").textContent = "0:00";
+        velvoraRecTimerInterval = setInterval(() => {
+            velvoraRecSeconds++;
+            document.getElementById("velvora-rec-timer").textContent = velvoraFormatTime(velvoraRecSeconds);
+        }, 1000);
+
+        velvoraSetupBars();
+        velvoraStartAmplitudeLoop();
+    }
+
+    function velvoraSetupBars() {
+        const barsEl = document.getElementById("velvora-rec-bars");
+        barsEl.innerHTML = "";
+        for (let i = 0; i < VELVORA_BAR_COUNT; i++) {
+            const bar = document.createElement("div");
+            bar.className = "velvora-rec-bar";
+            bar.style.height = "3px";
+            barsEl.appendChild(bar);
         }
     }
 
-    async function velvoraHandleRecordingStop() {
-        document.getElementById("velvora-chat-mic").classList.remove("recording");
-        velvoraIsRecording = false;
+    function velvoraStartAmplitudeLoop() {
+        velvoraAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = velvoraAudioCtx.createMediaStreamSource(velvoraRecStream);
+        velvoraAnalyser = velvoraAudioCtx.createAnalyser();
+        velvoraAnalyser.fftSize = 64;
+        source.connect(velvoraAnalyser);
+        const dataArray = new Uint8Array(velvoraAnalyser.frequencyBinCount);
+        const bars = document.querySelectorAll(".velvora-rec-bar");
+        let barIndex = 0;
+
+        function loop() {
+            if (!velvoraMediaRecorder || velvoraMediaRecorder.state !== "recording") return;
+            velvoraAnalyser.getByteFrequencyData(dataArray);
+            const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+            const height = Math.max(3, Math.min(22, (avg / 255) * 22 + Math.random() * 3));
+            bars[barIndex % bars.length].style.height = height + "px";
+            barIndex++;
+            requestAnimationFrame(loop);
+        }
+        loop();
+    }
+
+    function velvoraCancelRecording() {
+        velvoraRecCancelled = true;
+        if (velvoraMediaRecorder && velvoraMediaRecorder.state === "recording") {
+            velvoraMediaRecorder.stop();
+        }
+    }
+
+    function velvoraStopAndSendRecording() {
+        velvoraRecCancelled = false;
+        if (velvoraMediaRecorder && velvoraMediaRecorder.state === "recording") {
+            velvoraMediaRecorder.stop();
+        }
+    }
+
+    async function velvoraOnRecordingStopped() {
+        clearInterval(velvoraRecTimerInterval);
+        if (velvoraRecStream) velvoraRecStream.getTracks().forEach(t => t.stop());
+        if (velvoraAudioCtx) velvoraAudioCtx.close();
+
+        document.getElementById("velvora-recording-bar").classList.remove("active");
+        document.getElementById("velvora-chat-input-area").classList.remove("hidden");
+
+        if (velvoraRecCancelled) return;
 
         const audioBlob = new Blob(velvoraAudioChunks, { type: "audio/webm" });
-        velvoraAddMessage("🎤 Voice message sent", true);
+        const localUrl = URL.createObjectURL(audioBlob);
+
+        // Show the customer's own recording immediately, playable, so
+        // they can confirm what they sent.
+        velvoraAddAudioBubble(localUrl, true);
         velvoraShowTyping(true);
 
         const formData = new FormData();
@@ -304,22 +551,28 @@
                 VELVORA_API_BASE + "/api/chat/voice?session_id=" + velvoraSessionId,
                 { method: "POST", body: formData }
             );
-            const replyTextB64 = response.headers.get("X-Reply-Text");
-            const replyText = replyTextB64 ? decodeURIComponent(escape(atob(replyTextB64))) : "(voice reply)";
-            const replyBlob = await response.blob();
-            const audioUrl = URL.createObjectURL(replyBlob);
+            const data = await response.json();
             velvoraShowTyping(false);
-            velvoraAddMessage(replyText, false, audioUrl);
+
+            if (data.error) {
+                velvoraAddText("Sorry, I couldn't understand that voice message.", false);
+                return;
+            }
+
+            // Confirm what was heard, so the customer knows it was
+            // transcribed correctly.
+            velvoraAddCaption('Heard: "' + data.transcribed_text + '"', true, document.querySelectorAll(".velvora-row.user")[document.querySelectorAll(".velvora-row.user").length - 1]);
+
+            const replyAudioUrl = "data:audio/wav;base64," + data.reply_audio_base64;
+            const replyRow = velvoraAddAudioBubble(replyAudioUrl, false);
+            velvoraAddCaption(data.reply_text, false, replyRow);
+
         } catch (error) {
             velvoraShowTyping(false);
-            velvoraAddMessage("Sorry, something went wrong with the voice message.", false);
+            velvoraAddText("Sorry, something went wrong with the voice message.", false);
             console.error(error);
         }
     }
-
-    document.getElementById("velvora-chat-input").addEventListener("keypress", function(e) {
-        if (e.key === "Enter") velvoraSendMessage();
-    });
 </script>
 </body>
 </html>
