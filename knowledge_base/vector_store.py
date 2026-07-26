@@ -23,9 +23,12 @@ CHROMA_DIR = Path(__file__).parent.parent / "chroma_db"
 class GeminiEmbeddingFunction:
     """
     Custom ChromaDB embedding function using Google's Gemini API
-    instead of a local model. Keeps memory usage minimal since no
-    ML model is loaded into our own process.
+    instead of a local model.
     """
+
+    def name(self) -> str:
+        """Required by ChromaDB to identify this embedding function."""
+        return "gemini-text-embedding-004"
 
     def __call__(self, input: list[str]) -> list[list[float]]:
         embeddings = []
@@ -44,7 +47,7 @@ class GeminiEmbeddingFunction:
                 embeddings.append(response.json()["embedding"]["values"])
             except Exception as e:
                 logger.error(f"Embedding failed: {e}")
-                embeddings.append([0.0] * 768)  # fallback zero-vector
+                embeddings.append([0.0] * 768)
         return embeddings
 
 
