@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from fastapi import UploadFile, File
 from fastapi.responses import StreamingResponse
 import io
+import base64
 from integrations.voice_service import transcribe_audio_bytes, synthesize_speech
 from core.models import NormalizedMessage
 from core.orchestrator import handle_message
@@ -64,26 +65,17 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     return ChatResponse(reply=response.text, escalated=response.escalated)
 
+
 @router.post("/api/chat/voice")
 async def chat_voice(session_id: str, audio: UploadFile = File(...)):
     """
     Handles a voice message from the web widget.
 
-    Accepts an audio file upload, transcribes it, runs it through
-    the agent, and returns BOTH the text reply (as a header) and
-    the synthesized voice reply (as the response body audio stream).
-
-    Args:
-        session_id: The browser session's conversation ID.
-        audio:      The recorded audio file (webm/ogg from the browser).
-
-    Returns:
-        Streaming WAV audio response, with the reply text in the
-        X-Reply-Text header (base64-encoded to safely support any
-        language/characters in an HTTP header).
+    Returns JSON containing the transcribed text (so the customer can
+    confirm what was understood), the reply text, and the synthesized
+    reply audio as base64 — cleaner than streaming raw audio with
+    header-encoded text, and lets the frontend show a proper transcript.
     """
-    import base64
-
     audio_bytes = await audio.read()
     logger.info(f"Received web voice message from session {session_id}")
 
@@ -96,14 +88,11 @@ async def chat_voice(session_id: str, audio: UploadFile = File(...)):
     response = handle_message(msg)
 
     audio_reply = await synthesize_speech(response.text)
+    audio_b64 = base64.b64encode(audio_reply).decode("ascii")
 
-    encoded_text = base64.b64encode(response.text.encode("utf-8")).decode("ascii")
-
-    return StreamingResponse(
-        io.BytesIO(audio_reply),
-        media_type="audio/wav",
-        headers={
-            "X-Reply-Text": encoded_text,
-            "X-Escalated": str(response.escalated),
-        },
-    )
+    return {
+        "transcribed_text": text,
+        "reply_text": response.text,
+        "reply_audio_base64": audio_b64,
+        "escalated": response.escalated,
+    }

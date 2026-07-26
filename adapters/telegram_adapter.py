@@ -29,6 +29,7 @@ from core.models import NormalizedMessage
 from telegram.ext import MessageHandler, filters, CommandHandler
 from core.orchestrator import handle_message
 from persistence.db import init_db
+from telegram.constants import ParseMode
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -88,7 +89,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         f"Sending reply to {user_id} | escalated={response.escalated}"
     )
 
-    await update.message.reply_text(response.text)
+    await update.message.reply_text(response.text, parse_mode=ParseMode.MARKDOWN)
 
 async def on_voice_message(
     update: Update, context: ContextTypes.DEFAULT_TYPE
