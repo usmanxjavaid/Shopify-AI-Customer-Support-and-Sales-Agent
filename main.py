@@ -18,7 +18,7 @@ listening for requests.
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from adapters.telegram_adapter import router as telegram_router
 from adapters.admin_routes import router as admin_router
 from adapters.web_adapter import router as web_router
 from persistence.db import init_db
@@ -55,7 +55,7 @@ app.add_middleware(
 
 app.include_router(web_router)
 app.include_router(admin_router)
-
+app.include_router(telegram_router)
 
 @app.get("/health")
 async def health():

@@ -31,8 +31,35 @@ from core.orchestrator import handle_message
 from persistence.db import init_db
 from telegram.constants import ParseMode
 from logger import get_logger
-
 logger = get_logger(__name__)
+
+from fastapi import APIRouter, Request
+from telegram import Update
+
+router = APIRouter()
+
+# Build the bot application once, reused by the webhook handler
+_telegram_app = (
+    ApplicationBuilder()
+    .token(settings.TELEGRAM_BOT_TOKEN)
+    .build()
+)
+_telegram_app.add_handler(CommandHandler("start", on_start))
+_telegram_app.add_handler(MessageHandler(filters.VOICE, on_voice_message))
+_telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
+
+
+@router.post("/telegram/webhook")
+async def telegram_webhook(request: Request):
+    """
+    Receives incoming Telegram updates via webhook instead of polling.
+    This lets the Telegram bot run inside the same web service as
+    everything else — no separate always-on process needed.
+    """
+    data = await request.json()
+    update = Update.de_json(data, _telegram_app.bot)
+    await _telegram_app.process_update(update)
+    return {"ok": True}
 
 async def on_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
@@ -143,6 +170,7 @@ async def on_voice_message(
         # customer still gets an answer
         logger.warning("Voice synthesis failed — falling back to text reply")
         await update.message.reply_text(response.text)
+
         
 def run() -> None:
     """
