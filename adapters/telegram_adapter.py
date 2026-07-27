@@ -36,6 +36,29 @@ logger = get_logger(__name__)
 from fastapi import APIRouter, Request
 from telegram import Update
 
+async def on_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handles the /start command — Telegram's standard first message
+    when a user opens a bot for the first time.
+
+    Args:
+        update:  Telegram's update object.
+        context: Telegram bot context (unused here).
+    """
+    user_id = str(update.effective_chat.id)
+    logger.info(f"New conversation started by {user_id}")
+
+    welcome_message = (
+        "👋 Hi! I'm Velvora's support assistant.\n\n"
+        "I can help you with:\n"
+        "• Order status and tracking\n"
+        "• Product info and pricing\n"
+        "• Refund requests\n\n"
+        "Just tell me what you need!"
+    )
+
+    await update.message.reply_text(welcome_message)
+
 router = APIRouter()
 
 # Build the bot application once, reused by the webhook handler
@@ -61,28 +84,6 @@ async def telegram_webhook(request: Request):
     await _telegram_app.process_update(update)
     return {"ok": True}
 
-async def on_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Handles the /start command — Telegram's standard first message
-    when a user opens a bot for the first time.
-
-    Args:
-        update:  Telegram's update object.
-        context: Telegram bot context (unused here).
-    """
-    user_id = str(update.effective_chat.id)
-    logger.info(f"New conversation started by {user_id}")
-
-    welcome_message = (
-        "👋 Hi! I'm Velvora's support assistant.\n\n"
-        "I can help you with:\n"
-        "• Order status and tracking\n"
-        "• Product info and pricing\n"
-        "• Refund requests\n\n"
-        "Just tell me what you need!"
-    )
-
-    await update.message.reply_text(welcome_message)
 
 async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
