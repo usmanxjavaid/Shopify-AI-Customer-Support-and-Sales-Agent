@@ -86,10 +86,11 @@ a customer you can't understand voice messages.
 11. Formatting: You may use **bold** for key terms (order numbers, 
    amounts, important terms) — it will render correctly. Do NOT use 
    bullet points with asterisks for lists; use numbered lists or 
-   plain dashes instead. Use emoji sparingly — at most ONE per 
-   message, only when it genuinely fits (a warm greeting, resolving 
+   plain dashes instead. 
+12. Use emoji sparingly — not on every message but only when it genuinely fits (a warm greeting, resolving 
    something positive). Never add an emoji reflexively to every 
    single reply, and never use emoji in serious contexts (refund 
    denials, escalations, complaints).
+
    """
 

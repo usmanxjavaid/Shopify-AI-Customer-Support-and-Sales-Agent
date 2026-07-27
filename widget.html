@@ -109,14 +109,12 @@
     }
     .velvora-audio-bubble.user .velvora-play-btn { background: rgba(255,255,255,0.18); color: white; }
     .velvora-audio-bubble.agent .velvora-play-btn { background: var(--v-ice); color: var(--v-navy); }
-    .velvora-audio-track {
-        flex: 1; height: 4px; border-radius: 2px; position: relative; cursor: pointer;
-    }
+    .velvora-waveform-wrap { flex: 1; display: flex; align-items: center; }
+
     .velvora-audio-bubble.user .velvora-audio-track { background: rgba(255,255,255,0.25); }
     .velvora-audio-bubble.agent .velvora-audio-track { background: var(--v-border); }
-    .velvora-audio-progress {
-        position: absolute; left: 0; top: 0; height: 100%; border-radius: 2px; width: 0%;
-    }
+    .velvora-waveform-canvas { width: 100%; height: 28px; cursor: pointer; }
+
     .velvora-audio-bubble.user .velvora-audio-progress { background: var(--v-teal); }
     .velvora-audio-bubble.agent .velvora-audio-progress { background: var(--v-teal); }
     .velvora-audio-time {
@@ -326,71 +324,119 @@
         return `${m}:${s}`;
     }
 
-    function velvoraAddAudioBubble(audioUrl, isUser) {
-        const messagesEl = document.getElementById("velvora-chat-messages");
-        const row = document.createElement("div");
-        row.className = "velvora-row " + (isUser ? "user" : "agent");
+    async function velvoraAddAudioBubble(audioUrl, isUser) {
+    const messagesEl = document.getElementById("velvora-chat-messages");
+    const row = document.createElement("div");
+    row.className = "velvora-row " + (isUser ? "user" : "agent");
 
-        const bubble = document.createElement("div");
-        bubble.className = "velvora-audio-bubble " + (isUser ? "user" : "agent");
+    const bubble = document.createElement("div");
+    bubble.className = "velvora-audio-bubble " + (isUser ? "user" : "agent");
 
-        const playBtn = document.createElement("button");
-        playBtn.className = "velvora-play-btn";
-        playBtn.innerHTML = velvoraPlayIcon();
+    const playBtn = document.createElement("button");
+    playBtn.className = "velvora-play-btn";
+    playBtn.innerHTML = velvoraPlayIcon();
 
-        const track = document.createElement("div");
-        track.className = "velvora-audio-track";
-        const progress = document.createElement("div");
-        progress.className = "velvora-audio-progress";
-        track.appendChild(progress);
+    const waveformWrap = document.createElement("div");
+    waveformWrap.className = "velvora-waveform-wrap";
+    const canvas = document.createElement("canvas");
+    canvas.className = "velvora-waveform-canvas";
+    canvas.width = 160;
+    canvas.height = 28;
+    waveformWrap.appendChild(canvas);
 
-        const time = document.createElement("span");
-        time.className = "velvora-audio-time";
-        time.textContent = "0:00";
+    const time = document.createElement("span");
+    time.className = "velvora-audio-time";
+    time.textContent = "0:00";
 
-        bubble.appendChild(playBtn);
-        bubble.appendChild(track);
-        bubble.appendChild(time);
-        row.appendChild(bubble);
-        messagesEl.appendChild(row);
-        messagesEl.scrollTop = messagesEl.scrollHeight;
+    bubble.appendChild(playBtn);
+    bubble.appendChild(waveformWrap);
+    bubble.appendChild(time);
+    row.appendChild(bubble);
+    messagesEl.appendChild(row);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
 
-        const audio = new Audio(audioUrl);
-        let seeking = false;
+    const audio = new Audio(audioUrl);
+    const ctx = canvas.getContext("2d");
+    let peaks = [];
+    const barColor = isUser ? "rgba(255,255,255,0.4)" : "#CBD5E1";
+    const progressColor = "#1FC6C6";
 
-        audio.addEventListener("loadedmetadata", () => {
-            time.textContent = velvoraFormatTime(audio.duration);
-        });
-        audio.addEventListener("timeupdate", () => {
-            if (seeking) return;
-            const pct = (audio.currentTime / audio.duration) * 100 || 0;
-            progress.style.width = pct + "%";
-            time.textContent = velvoraFormatTime(audio.duration - audio.currentTime);
-        });
-        audio.addEventListener("ended", () => {
-            playBtn.innerHTML = velvoraPlayIcon();
-            progress.style.width = "0%";
-            time.textContent = velvoraFormatTime(audio.duration);
-        });
+    function drawWaveform(progressRatio) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const barWidth = 2.5;
+        const gap = 1.5;
+        const totalBars = Math.floor(canvas.width / (barWidth + gap));
+        const step = Math.max(1, Math.floor(peaks.length / totalBars));
 
-        playBtn.addEventListener("click", () => {
-            if (audio.paused) {
-                document.querySelectorAll("audio").forEach(a => { if (a !== audio) a.pause(); });
-                audio.play();
-                playBtn.innerHTML = velvoraPauseIcon();
-            } else {
-                audio.pause();
-                playBtn.innerHTML = velvoraPlayIcon();
+        for (let i = 0; i < totalBars; i++) {
+            const peak = peaks[i * step] || 0;
+            const barHeight = Math.max(2, peak * canvas.height);
+            const x = i * (barWidth + gap);
+            const y = (canvas.height - barHeight) / 2;
+            const isPlayed = (i / totalBars) <= progressRatio;
+            ctx.fillStyle = isPlayed ? progressColor : barColor;
+            ctx.fillRect(x, y, barWidth, barHeight);
+        }
+    }
+
+    // Decode audio to extract real amplitude peaks for the waveform
+    try {
+        const response = await fetch(audioUrl);
+        const arrayBuffer = await response.arrayBuffer();
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+        const rawData = decoded.getChannelData(0);
+        const samples = 100;
+        const blockSize = Math.floor(rawData.length / samples);
+
+        for (let i = 0; i < samples; i++) {
+            let sum = 0;
+            for (let j = 0; j < blockSize; j++) {
+                sum += Math.abs(rawData[i * blockSize + j] || 0);
             }
-        });
+            peaks.push(sum / blockSize);
+        }
+        const max = Math.max(...peaks) || 1;
+        peaks = peaks.map(p => p / max);
+        audioCtx.close();
+    } catch (e) {
+        peaks = new Array(100).fill(0.3); // fallback flat waveform if decoding fails
+    }
 
-        track.addEventListener("click", (e) => {
-            const rect = track.getBoundingClientRect();
-            const pct = (e.clientX - rect.left) / rect.width;
-            if (audio.duration) audio.currentTime = pct * audio.duration;
-        });
+    drawWaveform(0);
 
-        return row;
+    audio.addEventListener("loadedmetadata", () => {
+        time.textContent = velvoraFormatTime(audio.duration);
+    });
+    audio.addEventListener("timeupdate", () => {
+        const ratio = audio.currentTime / audio.duration || 0;
+        drawWaveform(ratio);
+        time.textContent = velvoraFormatTime(audio.duration - audio.currentTime);
+    });
+    audio.addEventListener("ended", () => {
+        playBtn.innerHTML = velvoraPlayIcon();
+        drawWaveform(0);
+        time.textContent = velvoraFormatTime(audio.duration);
+    });
+
+    playBtn.addEventListener("click", () => {
+        if (audio.paused) {
+            document.querySelectorAll("audio").forEach(a => a.pause());
+            audio.play();
+            playBtn.innerHTML = velvoraPauseIcon();
+        } else {
+            audio.pause();
+            playBtn.innerHTML = velvoraPlayIcon();
+        }
+    });
+
+    canvas.addEventListener("click", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const ratio = (e.clientX - rect.left) / rect.width;
+        if (audio.duration) audio.currentTime = ratio * audio.duration;
+    });
+
+    return row;
     }
 
     function velvoraPlayIcon() {
@@ -540,7 +586,7 @@
 
         // Show the customer's own recording immediately, playable, so
         // they can confirm what they sent.
-        velvoraAddAudioBubble(localUrl, true);
+        const row = await velvoraAddAudioBubble(localUrl, true);
         velvoraShowTyping(true);
 
         const formData = new FormData();
@@ -564,7 +610,7 @@
             velvoraAddCaption('Heard: "' + data.transcribed_text + '"', true, document.querySelectorAll(".velvora-row.user")[document.querySelectorAll(".velvora-row.user").length - 1]);
 
             const replyAudioUrl = "data:audio/wav;base64," + data.reply_audio_base64;
-            const replyRow = velvoraAddAudioBubble(replyAudioUrl, false);
+            const replyRow = await velvoraAddAudioBubble(replyAudioUrl, false);
             velvoraAddCaption(data.reply_text, false, replyRow);
 
         } catch (error) {
