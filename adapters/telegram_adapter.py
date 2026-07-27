@@ -36,6 +36,9 @@ logger = get_logger(__name__)
 from fastapi import APIRouter, Request
 from telegram import Update
 
+
+router = APIRouter()
+
 async def on_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handles the /start command — Telegram's standard first message
@@ -149,36 +152,34 @@ async def on_voice_message(
         await update.message.reply_text(response.text)
 
         
-def run() -> None:
-    """
-    Starts the Telegram bot in polling mode.
+# def run() -> None:
+#     """
+#     Starts the Telegram bot in polling mode.
 
-    Polling mode means the bot actively checks Telegram's servers
-    for new messages — simplest setup, no public URL/webhook needed.
-    Good for development and small-scale production use.
-    """
-    init_db()
-    logger.info("Starting Telegram bot...")
+#     Polling mode means the bot actively checks Telegram's servers
+#     for new messages — simplest setup, no public URL/webhook needed.
+#     Good for development and small-scale production use.
+#     """
+#     init_db()
+#     logger.info("Starting Telegram bot...")
 
-    app = (
-        ApplicationBuilder()
-        .token(settings.TELEGRAM_BOT_TOKEN)
-        .connect_timeout(30)
-        .read_timeout(30)
-        .write_timeout(30)
-        .pool_timeout(30)
-        .build()
-    )
-    app.add_handler(CommandHandler("start", on_start))
-    app.add_handler(MessageHandler(filters.VOICE, on_voice_message))
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, on_message)
-    )
+#     app = (
+#         ApplicationBuilder()
+#         .token(settings.TELEGRAM_BOT_TOKEN)
+#         .connect_timeout(30)
+#         .read_timeout(30)
+#         .write_timeout(30)
+#         .pool_timeout(30)
+#         .build()
+#     )
+#     app.add_handler(CommandHandler("start", on_start))
+#     app.add_handler(MessageHandler(filters.VOICE, on_voice_message))
+#     app.add_handler(
+#         MessageHandler(filters.TEXT & ~filters.COMMAND, on_message)
+#     )
 
-    logger.info("Telegram bot is running. Press Ctrl+C to stop.")
-    app.run_polling()
-    
-router = APIRouter()
+#     logger.info("Telegram bot is running. Press Ctrl+C to stop.")
+#     app.run_polling()
 
 # Build the bot application once, reused by the webhook handler
 _telegram_app = (

@@ -18,7 +18,7 @@ listening for requests.
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from adapters.telegram_adapter import router as telegram_router
+from adapters.telegram_adapter import router as telegram_router, _telegram_app
 from adapters.admin_routes import router as admin_router
 from adapters.web_adapter import router as web_router
 from persistence.db import init_db
@@ -36,8 +36,13 @@ async def lifespan(app: FastAPI):
     Code after `yield` would run on shutdown (nothing needed there yet).
     """
     init_db()
+    await _telegram_app.initialize()
+
     logger.info("FastAPI app started, database ready")
+
     yield
+
+    await _telegram_app.shutdown()
     logger.info("FastAPI app shutting down")
 
 
