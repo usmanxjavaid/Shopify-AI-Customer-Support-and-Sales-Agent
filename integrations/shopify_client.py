@@ -516,24 +516,63 @@ class ShopifyClient:
     # Cancel Fulfillment
     # ------------------------------------------------------------------
     
-    def cancel_fulfillment(self, fulfillment_id: int) -> bool:
+    def cancel_order_fulfillment(self, order_id: int) -> bool:
         """
-        Cancels a fulfillment that hasn't actually shipped yet
-        (no carrier tracking movement). Used when a customer wants
-        to cancel/refund an order that's marked fulfilled in Shopify
-        but hasn't physically left the warehouse.
+        Cancels all open fulfillment orders for a given order.
+
+        IMPORTANT: only returns True if we can confirm at least one
+        fulfillment order was actively cancelled. If nothing needed
+        cancelling (e.g. all fulfillment orders are already closed),
+        we do NOT assume that means "safe to refund" — we return
+        False so the caller escalates to a human instead of risking
+        a false-positive refund on an order that may have shipped.
 
         Args:
-            fulfillment_id: Shopify fulfillment ID.
+            order_id: Shopify internal order ID.
 
         Returns:
-            True if cancelled successfully, False otherwise.
+            True only if at least one fulfillment order was
+            confirmed cancelled. False in every other case,
+            including "nothing to cancel."
         """
-        logger.info(f"Cancelling fulfillment {fulfillment_id}")
+        logger.info(f"Fetching fulfillment orders for order {order_id}")
+
         try:
-            self._post(f"/fulfillments/{fulfillment_id}/cancel.json", {})
-            logger.info(f"Fulfillment {fulfillment_id} cancelled")
+            data = self._get(f"/orders/{order_id}/fulfillment_orders.json")
+            fulfillment_orders = data.get("fulfillment_orders", [])
+
+            if not fulfillment_orders:
+                logger.warning(f"No fulfillment orders found for order {order_id}")
+                return False
+
+            cancelled_count = 0
+            skipped_statuses = []
+
+            for fo in fulfillment_orders:
+                fo_id = fo["id"]
+                fo_status = fo.get("status")
+
+                if fo_status in ("closed", "cancelled"):
+                    skipped_statuses.append(fo_status)
+                    continue
+
+                try:
+                    self._post(f"/fulfillment_orders/{fo_id}/cancel.json", {})
+                    logger.info(f"Cancelled fulfillment order {fo_id}")
+                    cancelled_count += 1
+                except RuntimeError as e:
+                    logger.error(f"Failed to cancel fulfillment order {fo_id}: {e}")
+
+            if cancelled_count == 0:
+                logger.warning(
+                    f"No fulfillment orders were actually cancelled for "
+                    f"order {order_id} (statuses seen: {skipped_statuses}). "
+                    f"Refusing to treat this as a confirmed cancellation."
+                )
+                return False
+
             return True
+
         except RuntimeError as e:
-            logger.error(f"Failed to cancel fulfillment {fulfillment_id}: {e}")
+            logger.error(f"Failed to fetch fulfillment orders for {order_id}: {e}")
             return False

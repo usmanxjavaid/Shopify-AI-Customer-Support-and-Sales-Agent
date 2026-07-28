@@ -161,17 +161,14 @@ def _execute_tool(
     """
     Executes a tool by name with the given arguments.
 
+    For certain tools that need to know WHO/WHERE the request came
+    from (e.g. initiate_refund needs channel/user_id to correctly
+    log a pending return), we inject those automatically here rather
+    than exposing them as LLM-controlled parameters — the LLM has
+    no business knowing or guessing these technical IDs.
+
     Logs every execution to the permanent audit trail, regardless
     of success or failure.
-
-    Args:
-        tool_name: Name of the tool the LLM requested.
-        arguments: Parsed arguments dict from the LLM's tool call.
-        channel:   Which channel this request came from.
-        user_id:   The user's stable ID within that channel.
-
-    Returns:
-        The tool's plain text result, or an error message.
     """
     func = TOOL_FUNCTIONS.get(tool_name)
 
@@ -181,9 +178,15 @@ def _execute_tool(
         log_tool_call(channel, user_id, tool_name, arguments, result, success=False)
         return result
 
+    # Inject channel/user_id for tools that need routing context
+    call_args = dict(arguments)
+    if tool_name == "initiate_refund":
+        call_args["channel"] = channel
+        call_args["user_id"] = user_id
+
     try:
         logger.info(f"Executing tool: {tool_name} | args: {arguments}")
-        result = func(**arguments)
+        result = func(**call_args)
         log_tool_call(channel, user_id, tool_name, arguments, result, success=True)
 
         if tool_name == "escalate_to_human":

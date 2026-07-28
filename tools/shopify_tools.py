@@ -268,16 +268,35 @@ def verify_customer_email(order_number: str, email: str) -> str:
 # ------------------------------------------------------------------
 
 
-def initiate_refund(order_number: str, reason: str, verified_email: str) -> str:
+def initiate_refund(
+    order_number: str,
+    reason: str,
+    verified_email: str,
+    channel: str = "unknown",
+    user_id: str = "unknown",
+) -> str:
     """
     Processes a refund request by routing it through the correct
     automated path based on real shipment status:
 
         - Not shipped yet        -> refunded immediately
         - Shipped, no tracking   -> fulfillment cancelled, then refunded
+                                     (only if cancellation is confirmed)
         - Actually shipped       -> a return is started; refund happens
                                      ONLY after a human confirms the
                                      item has physically been returned
+
+    Args:
+        order_number:   The order number to refund e.g. "1001".
+        reason:         The customer's stated reason for the refund.
+        verified_email: Email confirmed via verify_customer_email.
+        channel:        Injected automatically by the orchestrator —
+                        NOT something the LLM should pass.
+        user_id:        Injected automatically by the orchestrator —
+                        NOT something the LLM should pass.
+
+    Returns:
+        Plain text result for the LLM to relay to the customer.
     """
     cleaned = order_number.strip().lstrip("#").strip()
     logger.info(f"Refund requested for order #{cleaned} | reason: {reason}")
@@ -326,8 +345,21 @@ def initiate_refund(order_number: str, reason: str, verified_email: str) -> str:
             return "REFUND_FAILED: Could not process refund. Please escalate."
 
         if path == RefundPath.CANCEL_AND_REFUND:
+            cancel_success = False
             if order.fulfillment_id:
-                _client.cancel_fulfillment(order.fulfillment_id)
+                cancel_success = _client.cancel_order_fulfillment(order.order_id)
+
+            if not cancel_success:
+                logger.warning(
+                    f"Could not confirm fulfillment cancellation for order "
+                    f"{order.order_number} — refusing to refund automatically."
+                )
+                return (
+                    "REFUND_NOT_ELIGIBLE: Could not confirm the order was "
+                    "stopped before shipping. Please escalate to a human agent "
+                    "for manual verification before refunding."
+                )
+
             success = _client.create_refund(order.order_id, order.total_price, reason)
             if success:
                 return (
@@ -340,8 +372,8 @@ def initiate_refund(order_number: str, reason: str, verified_email: str) -> str:
         if path == RefundPath.REQUIRES_RETURN:
             create_pending_return(
                 order_number=order.order_number,
-                channel="unknown",  # filled in by orchestrator context if needed
-                user_id="unknown",
+                channel=channel,
+                user_id=user_id,
                 customer_email=verified_email,
                 tracking_number=order.tracking_number,
             )
@@ -358,7 +390,6 @@ def initiate_refund(order_number: str, reason: str, verified_email: str) -> str:
     except Exception as e:
         logger.error(f"Error processing refund for #{cleaned}: {e}")
         return "An error occurred while processing the refund. Please escalate."
-
 
 # ------------------------------------------------------------------
 # Escalation tool

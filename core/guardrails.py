@@ -76,22 +76,23 @@ def determine_refund_path(
     order_fulfilled_at: Optional[datetime],
     fulfillment_status: Optional[str],
     financial_status: str,
-    tracking_number: Optional[str],
+    tracking_number: Optional[str],  # kept in signature for compatibility, unused now
 ) -> tuple[RefundPath, str]:
     """
-    Decides which automated refund path applies, matching real
-    Shopify capabilities:
+    Decides which automated refund path applies.
 
-        Unfulfilled          -> AUTO_REFUND
-        Fulfilled, no tracking (not actually shipped yet)
-                              -> CANCEL_AND_REFUND
-        Fulfilled WITH tracking (physically shipped)
-                              -> REQUIRES_RETURN (never auto-refunded —
-                                 a human must confirm the item is
-                                 physically back before refunding)
+    Only two real, safely-automatable outcomes exist, based on what
+    Shopify's API can actually confirm:
 
-    Returns:
-        (RefundPath, human-readable reason)
+        Unfulfilled  -> AUTO_REFUND (nothing physical to return)
+        Fulfilled    -> REQUIRES_RETURN (always — Shopify doesn't
+                        reliably expose "shipped but recoverable"
+                        as a distinct, cancellable state; a human
+                        must confirm any fulfilled order's return)
+
+    This matches Shopify's own guidance: any fulfilled order goes
+    through a return process before refunding, regardless of whether
+    tracking exists yet.
     """
     if financial_status == "refunded":
         return RefundPath.ALREADY_REFUNDED, "This order has already been refunded."
@@ -101,20 +102,9 @@ def determine_refund_path(
 
     now = datetime.now(timezone.utc)
 
-    # Case 1: not fulfilled at all — safe to refund immediately
     if fulfillment_status not in ("fulfilled", "partial"):
         return RefundPath.AUTO_REFUND, "Order has not shipped — refunding directly."
 
-    # Case 2: fulfilled, but no tracking number assigned yet — hasn't
-    # actually left the warehouse, safe to cancel + refund
-    if not tracking_number:
-        return RefundPath.CANCEL_AND_REFUND, (
-            "Order is marked fulfilled but has no tracking number yet "
-            "— not physically shipped. Cancelling fulfillment and refunding."
-        )
-
-    # Case 3: genuinely shipped (has tracking) — check policy window/amount
-    # before even offering the return path
     if order_fulfilled_at:
         if order_fulfilled_at.tzinfo is None:
             order_fulfilled_at = order_fulfilled_at.replace(tzinfo=timezone.utc)
@@ -133,6 +123,6 @@ def determine_refund_path(
         )
 
     return RefundPath.REQUIRES_RETURN, (
-        "Order has shipped. A physical return is required before a "
-        "refund can be issued."
+        "Order has been fulfilled. A physical return is required before "
+        "a refund can be issued."
     )
