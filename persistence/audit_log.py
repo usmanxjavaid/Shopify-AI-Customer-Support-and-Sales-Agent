@@ -10,7 +10,7 @@ queryable record independent of Redis conversation memory.
 
 from datetime import datetime, timezone
 
-from persistence.db import engine, tool_calls_table, escalations_table
+from persistence.db import engine, tool_calls_table
 from logger import get_logger
 
 logger = get_logger(__name__)
