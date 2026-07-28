@@ -26,6 +26,7 @@ from typing import Optional
 from integrations.shopify_client import ShopifyClient
 from core.guardrails import determine_refund_path, RefundPath
 from persistence.queries import create_pending_return
+from persistence.queries import get_open_ticket, create_ticket, add_ticket_message
 import requests as http_requests
 from config import settings
 from logger import get_logger
@@ -395,59 +396,69 @@ def initiate_refund(
 # Escalation tool
 # ------------------------------------------------------------------
 
-def escalate_to_human(reason: str, customer_email: str = None) -> str:
+def escalate_to_human(
+    reason: str,
+    customer_email: str = None,
+    channel: str = "unknown",
+    user_id: str = "unknown",
+) -> str:
     """
-    Escalates the current conversation to a human support agent.
+    Escalates the conversation to a human agent, creating a proper
+    support ticket. If a ticket is already open for this customer,
+    adds to it instead of creating a duplicate.
 
-    For web channel customers, ALWAYS try to get their email first
-    (ask them for it if you don't have one) before escalating, so
-    our support team can follow up by email — web chat sessions
-    aren't reliably reachable later otherwise.
-
-    For Telegram customers, email is optional since they're always
-    reachable directly through the bot.
+    Once escalated, the AI will stop responding to this customer
+    until a human resolves the ticket — this tool is the handoff
+    point, not just a notification.
 
     Args:
         reason: Clear explanation of why escalation is needed.
-        customer_email: Customer's email, if available/applicable.
+        customer_email: Customer's email, if available (required
+                        in practice for web channel customers).
+        channel: Injected automatically by the orchestrator.
+        user_id: Injected automatically by the orchestrator.
 
     Returns:
         Confirmation message to relay to the customer.
     """
-    logger.warning(f"Escalating to human | reason: {reason} | email: {customer_email}")
-    _notify_owner(reason, customer_email)
+    logger.warning(f"Escalating {channel}:{user_id} | reason: {reason}")
+
+    existing = get_open_ticket(channel, user_id)
+    if existing:
+        add_ticket_message(existing["id"], "system", f"Re-escalated: {reason}")
+        ticket_id = existing["id"]
+    else:
+        ticket_id = create_ticket(channel, user_id, customer_email, reason)
+        _send_ticket_notifications(ticket_id, channel, reason, customer_email)
 
     return (
-        f"ESCALATED: {reason} | "
-        f"A human agent has been notified and will follow up "
-        f"with you shortly{' by email' if customer_email else ''}. "
+        f"ESCALATED: Ticket #{ticket_id} created. A human agent has "
+        f"been notified and will follow up with you shortly"
+        f"{' by email' if customer_email else ''}. "
         f"We apologize for any inconvenience."
     )
 
-def _notify_owner(reason: str, customer_email: str = None) -> None:
-    """
-    Notifies the store owner of an escalation via Telegram AND email.
 
-    Telegram: instant alert.
-    Email: the actual ticket — replying to it will (once the inbound
-    webhook is built) route the reply back to the customer.
-    """
-    # Telegram alert (existing behavior)
+def _send_ticket_notifications(ticket_id: int, channel: str, reason: str, customer_email: str) -> None:
+    """Notifies the owner of a new ticket via Telegram and email."""
     if settings.TELEGRAM_BOT_TOKEN and settings.OWNER_TELEGRAM_CHAT_ID:
         try:
             http_requests.post(
                 f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage",
                 json={
                     "chat_id": settings.OWNER_TELEGRAM_CHAT_ID,
-                    "text": f"🚨 Escalation needed\n\nReason: {reason}",
+                    "text": f"🎫 New ticket #{ticket_id}\n\n{reason}",
                 },
                 timeout=10,
             )
         except http_requests.exceptions.RequestException as e:
-            logger.error(f"Failed to notify owner via Telegram: {e}")
+            logger.error(f"Telegram ticket notify failed: {e}")
 
-    # Email ticket
     if settings.RESEND_API_KEY and settings.OWNER_EMAIL:
+        base_address = settings.RESEND_INBOUND_ADDRESS
+        local_part, domain_part = base_address.split("@")
+        reply_to = f"{local_part}+ticket{ticket_id}@{domain_part}"
+
         try:
             http_requests.post(
                 "https://api.resend.com/emails",
@@ -455,15 +466,15 @@ def _notify_owner(reason: str, customer_email: str = None) -> None:
                 json={
                     "from": "Velvora Support <onboarding@resend.dev>",
                     "to": [settings.OWNER_EMAIL],
-                    "subject": f"New escalation: {reason[:60]}",
+                    "reply_to": reply_to,
+                    "subject": f"Ticket #{ticket_id}: {reason[:60]}",
                     "text": (
-                        f"Reason: {reason}\n\n"
-                        f"Customer email: {customer_email or 'not provided'}\n\n"
-                        f"Reply to this email to respond to the customer."
+                        f"{reason}\n\nCustomer email: {customer_email or 'not provided'}\n\n"
+                        f"Reply to this email to respond directly to the customer."
                     ),
                 },
                 timeout=10,
             )
-            logger.info("Owner notified via email")
+            logger.info(f"Email notification sent for ticket #{ticket_id}")
         except http_requests.exceptions.RequestException as e:
-            logger.error(f"Failed to notify owner via email: {e}")
+            logger.error(f"Email ticket notify failed: {e}")

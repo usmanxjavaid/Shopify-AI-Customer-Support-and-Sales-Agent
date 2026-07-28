@@ -22,7 +22,10 @@ from persistence.queries import (
     get_summary_stats,
     get_escalations,
     get_recent_tool_calls,
-    mark_escalation_resolved,
+)
+from persistence.queries import (
+    get_all_tickets, get_ticket, get_ticket_messages,
+    add_ticket_message, set_ticket_status, get_pending_returns,
 )
 from logger import get_logger
 
@@ -102,29 +105,22 @@ async def admin_dashboard(request: Request):
         return RedirectResponse(url="/admin")
 
     stats = get_summary_stats()
-    escalations = get_escalations()
+    tickets = get_all_tickets()
     tool_calls = get_recent_tool_calls()
 
-    escalations_rows = "".join(
+    tickets_rows = "".join(
         f"""
         <tr>
-            <td>{e['id']}</td>
-            <td>{e['channel']}</td>
-            <td>{e['user_id']}</td>
-            <td>{e['reason']}</td>
-            <td>{e['timestamp'].strftime('%Y-%m-%d %H:%M')}</td>
-            <td>{'✅ Resolved' if e['resolved'] else '⏳ Pending'}</td>
-            <td>
-                {'' if e['resolved'] else f'''
-            <form method="post" action="/admin/reply/{e["id"]}" style="display:flex; gap:6px; margin-top:4px;">
-                <input type="text" name="message" placeholder="Reply to customer..." required style="flex:1; padding:4px 8px; border-radius:4px; border:1px solid #ccc; font-size:12px;">
-                <button type="submit">Send &amp; Resolve</button>
-            </form>
-            '''}
-            </td>
+            <td>{t['id']}</td>
+            <td>{t['channel']}</td>
+            <td>{t['user_id']}</td>
+            <td>{t['subject'][:60]}</td>
+            <td>{t['status']}</td>
+            <td>{t['updated_at'].strftime('%Y-%m-%d %H:%M')}</td>
+            <td><a href="/admin/ticket/{t['id']}">Open</a></td>
         </tr>
         """
-        for e in escalations
+        for t in tickets
     )
 
     tool_calls_rows = "".join(
@@ -172,10 +168,10 @@ async def admin_dashboard(request: Request):
             <div class="stat-card"><div class="number">{stats['refunds_blocked']}</div><div class="label">Refunds blocked</div></div>
         </div>
 
-        <h2>Escalations</h2>
+        <h2>Tickets</h2>
         <table>
-            <tr><th>ID</th><th>Channel</th><th>User</th><th>Reason</th><th>Time</th><th>Status</th><th></th></tr>
-            {escalations_rows or '<tr><td colspan="7">No escalations yet</td></tr>'}
+            <tr><th>ID</th><th>Channel</th><th>User</th><th>Subject</th><th>Status</th><th>Updated</th><th></th></tr>
+            {tickets_rows or '<tr><td colspan="7">No tickets yet</td></tr>'}
         </table>
 
         <h2>Recent Tool Activity</h2>
@@ -188,74 +184,94 @@ async def admin_dashboard(request: Request):
     """)
 
 
-from persistence.queries import get_pending_returns, mark_return_refunded
-
-
-@router.post("/admin/confirm-return/{return_id}")
-async def confirm_return(return_id: int, request: Request):
-    """
-    Human confirms a physically returned item has arrived — THIS is
-    what actually triggers the refund for shipped orders. Never
-    automated, by design.
-    """
+@router.get("/admin/ticket/{ticket_id}", response_class=HTMLResponse)
+async def ticket_detail(ticket_id: int, request: Request):
     if not _is_authenticated(request):
         return RedirectResponse(url="/admin")
 
-    returns = get_pending_returns()
-    target = next((r for r in returns if r["id"] == return_id), None)
+    ticket = get_ticket(ticket_id)
+    if not ticket:
+        return HTMLResponse("Ticket not found", status_code=404)
 
-    if target:
-        orders = _client.get_orders_by_number(target["order_number"].lstrip("#"))
-        if orders:
-            order = orders[0]
-            _client.create_refund(order.order_id, order.total_price, "Return confirmed by staff")
-            mark_return_refunded(return_id)
-            logger.info(f"Return confirmed and refunded for order {target['order_number']}")
+    messages = get_ticket_messages(ticket_id)
 
-    return RedirectResponse(url="/admin/dashboard", status_code=303)
+    messages_html = "".join(
+        f"""
+        <div style="margin-bottom:12px; padding:10px 14px; border-radius:8px;
+                    background:{'#1a1a1a' if m['sender']=='agent' else '#f0f0f0' if m['sender']=='customer' else '#fff3cd'};
+                    color:{'white' if m['sender']=='agent' else 'black'}; max-width:70%;
+                    {'margin-left:auto;' if m['sender']=='agent' else ''}">
+            <div style="font-size:11px; opacity:0.7; margin-bottom:4px;">{m['sender']} · {m['created_at'].strftime('%Y-%m-%d %H:%M')}</div>
+            {m['message']}
+        </div>
+        """
+        for m in messages
+    )
+
+    return HTMLResponse(f"""
+    <html><head><title>Ticket #{ticket_id}</title>
+    <style>body{{font-family:-apple-system,sans-serif;background:#f4f4f4;padding:30px;}}
+    .box{{background:white;padding:20px;border-radius:12px;max-width:700px;margin:0 auto;}}
+    textarea{{width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;font-family:inherit;}}
+    button{{background:#1a1a1a;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;margin-top:8px;}}
+    </style></head>
+    <body>
+    <div class="box">
+        <a href="/admin/dashboard">&larr; Back to dashboard</a>
+        <h2>Ticket #{ticket_id} — {ticket['status']}</h2>
+        <p style="color:#666;">{ticket['channel']}:{ticket['user_id']} · {ticket['customer_email'] or 'no email'}</p>
+        {messages_html}
+        <form method="post" action="/admin/ticket/{ticket_id}/reply">
+            <textarea name="message" rows="3" placeholder="Reply to customer..." required></textarea>
+            <button type="submit">Send Reply</button>
+        </form>
+        <form method="post" action="/admin/ticket/{ticket_id}/resolve" style="margin-top:8px;">
+            <button type="submit" style="background:#16a34a;">Mark Resolved</button>
+        </form>
+    </div>
+    </body></html>
+    """)
 
 
-@router.post("/admin/resolve/{escalation_id}")
-async def resolve_escalation(escalation_id: int, request: Request):
-    """Marks an escalation as resolved, then redirects back to dashboard."""
+@router.post("/admin/ticket/{ticket_id}/reply")
+async def ticket_reply(ticket_id: int, request: Request, message: str = Form(...)):
     if not _is_authenticated(request):
         return RedirectResponse(url="/admin")
 
-    mark_escalation_resolved(escalation_id)
-    return RedirectResponse(url="/admin/dashboard", status_code=303)
-
-
-logger.debug("adapters.admin_routes loaded successfully")
-
-
-@router.post("/admin/reply/{escalation_id}")
-async def reply_to_escalation(escalation_id: int, request: Request, message: str = Form(...)):
-    """
-    Sends a human agent's reply to a customer, routed to whichever
-    channel they're actually on.
-    """
-    if not _is_authenticated(request):
-        return RedirectResponse(url="/admin")
-
-    escalations = get_escalations(limit=200)
-    target = next((e for e in escalations if e["id"] == escalation_id), None)
-
-    if target:
-        channel = target["channel"]
-        user_id = target["user_id"]
+    ticket = get_ticket(ticket_id)
+    if ticket:
+        add_ticket_message(ticket_id, "agent", message)
+        channel = ticket["channel"]
+        user_id = ticket["user_id"]
 
         if channel == "telegram":
-            # Deliver instantly via Telegram bot API
             http_requests.post(
                 f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage",
                 json={"chat_id": user_id, "text": f"[Support Team] {message}"},
                 timeout=10,
             )
-        else:
-            # Web (or future channels) — queue for polling delivery
-            queue_human_reply(channel, user_id, message)
+        elif ticket.get("customer_email"):
+            http_requests.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+                json={
+                    "from": "Velvora Support <onboarding@resend.dev>",
+                    "to": [ticket["customer_email"]],
+                    "subject": f"Re: Ticket #{ticket_id}",
+                    "text": message,
+                },
+                timeout=10,
+            )
 
-        mark_escalation_resolved(escalation_id)
-        logger.info(f"Human reply sent for escalation {escalation_id} via {channel}")
+        set_ticket_status(ticket_id, "pending")
 
+    return RedirectResponse(url=f"/admin/ticket/{ticket_id}", status_code=303)
+
+
+@router.post("/admin/ticket/{ticket_id}/resolve")
+async def ticket_resolve(ticket_id: int, request: Request):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/admin")
+
+    set_ticket_status(ticket_id, "resolved")
     return RedirectResponse(url="/admin/dashboard", status_code=303)

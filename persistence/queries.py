@@ -9,8 +9,8 @@ only READS and aggregates data for display purposes.
 
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func, update
-from persistence.db import pending_replies_table
-from persistence.db import engine, tool_calls_table, escalations_table
+from persistence.db import tickets_table, ticket_messages_table
+from persistence.db import engine, tool_calls_table
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -180,34 +180,6 @@ def get_recent_tool_calls(limit: int = 50) -> list[dict]:
         logger.error(f"Failed to fetch tool calls: {e}")
         return []
 
-
-def mark_escalation_resolved(escalation_id: int) -> bool:
-    """
-    Marks an escalation as resolved.
-
-    Args:
-        escalation_id: The ID of the escalation record.
-
-    Returns:
-        True if updated successfully, False otherwise.
-    """
-    try:
-        with engine.begin() as conn:
-            conn.execute(
-                update(escalations_table)
-                .where(escalations_table.c.id == escalation_id)
-                .values(resolved=True)
-            )
-        logger.info(f"Marked escalation {escalation_id} as resolved")
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to resolve escalation {escalation_id}: {e}")
-        return False
-
-from persistence.db import pending_returns_table
-
-
 def create_pending_return(
     order_number: str, channel: str, user_id: str,
     customer_email: str, tracking_number: str
@@ -244,16 +216,130 @@ def get_pending_returns() -> list[dict]:
         return []
 
 
-def mark_return_refunded(return_id: int) -> None:
+def create_ticket(channel: str, user_id: str, customer_email: str, subject: str) -> int:
+    """Creates a new ticket and its first message, returns the ticket ID."""
+    now = datetime.now(timezone.utc)
+    try:
+        with engine.begin() as conn:
+            result = conn.execute(
+                tickets_table.insert().values(
+                    channel=channel,
+                    user_id=user_id,
+                    customer_email=customer_email,
+                    subject=subject,
+                    status="open",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            ticket_id = result.inserted_primary_key[0]
+            conn.execute(
+                ticket_messages_table.insert().values(
+                    ticket_id=ticket_id,
+                    sender="customer",
+                    message=subject,
+                    created_at=now,
+                )
+            )
+        logger.info(f"Created ticket #{ticket_id} for {channel}:{user_id}")
+        return ticket_id
+    except Exception as e:
+        logger.error(f"Failed to create ticket: {e}")
+        return None
+
+
+def add_ticket_message(ticket_id: int, sender: str, message: str) -> None:
+    """Appends a message to a ticket's thread and bumps updated_at."""
     try:
         with engine.begin() as conn:
             conn.execute(
-                update(pending_returns_table)
-                .where(pending_returns_table.c.id == return_id)
-                .values(status="refunded", refunded_at=datetime.now(timezone.utc))
+                ticket_messages_table.insert().values(
+                    ticket_id=ticket_id,
+                    sender=sender,
+                    message=message,
+                    created_at=datetime.now(timezone.utc),
+                )
             )
-        logger.info(f"Marked return {return_id} as refunded")
+            conn.execute(
+                update(tickets_table)
+                .where(tickets_table.c.id == ticket_id)
+                .values(updated_at=datetime.now(timezone.utc))
+            )
+        logger.info(f"Added {sender} message to ticket #{ticket_id}")
     except Exception as e:
-        logger.error(f"Failed to mark return refunded: {e}")
+        logger.error(f"Failed to add ticket message: {e}")
 
-logger.debug("persistence.queries loaded successfully")
+
+def get_open_ticket(channel: str, user_id: str) -> dict:
+    """
+    Returns the active ticket (open or pending) for this user, if any.
+    Used to decide whether the AI should respond, or a human has
+    already taken over this conversation.
+    """
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                select(tickets_table)
+                .where(tickets_table.c.channel == channel)
+                .where(tickets_table.c.user_id == user_id)
+                .where(tickets_table.c.status.in_(["open", "pending"]))
+                .order_by(tickets_table.c.created_at.desc())
+                .limit(1)
+            ).mappings().first()
+        return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"Failed to check open ticket: {e}")
+        return None
+
+
+def get_ticket(ticket_id: int) -> dict:
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                select(tickets_table).where(tickets_table.c.id == ticket_id)
+            ).mappings().first()
+        return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"Failed to fetch ticket #{ticket_id}: {e}")
+        return None
+
+
+def get_ticket_messages(ticket_id: int) -> list[dict]:
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                select(ticket_messages_table)
+                .where(ticket_messages_table.c.ticket_id == ticket_id)
+                .order_by(ticket_messages_table.c.created_at.asc())
+            ).mappings().all()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"Failed to fetch messages for ticket #{ticket_id}: {e}")
+        return []
+
+
+def get_all_tickets(limit: int = 100) -> list[dict]:
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                select(tickets_table)
+                .order_by(tickets_table.c.updated_at.desc())
+                .limit(limit)
+            ).mappings().all()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"Failed to fetch tickets: {e}")
+        return []
+
+
+def set_ticket_status(ticket_id: int, status: str) -> None:
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                update(tickets_table)
+                .where(tickets_table.c.id == ticket_id)
+                .values(status=status, updated_at=datetime.now(timezone.utc))
+            )
+        logger.info(f"Ticket #{ticket_id} status set to {status}")
+    except Exception as e:
+        logger.error(f"Failed to update ticket #{ticket_id} status: {e}")

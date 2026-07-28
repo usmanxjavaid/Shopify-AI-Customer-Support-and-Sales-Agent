@@ -26,6 +26,7 @@ from core.models import NormalizedMessage, AgentResponse
 from core.prompts import SYSTEM_PROMPT
 from core.tool_schemas import TOOL_SCHEMAS
 from persistence.audit_log import log_tool_call, log_escalation
+from persistence.queries import get_open_ticket, add_ticket_message
 from tools.knowledge_tools import search_knowledge_base
 from core import memory
 from logger import get_logger
@@ -180,7 +181,7 @@ def _execute_tool(
 
     # Inject channel/user_id for tools that need routing context
     call_args = dict(arguments)
-    if tool_name == "initiate_refund":
+    if tool_name in ("initiate_refund", "escalate_to_human"):
         call_args["channel"] = channel
         call_args["user_id"] = user_id
 
@@ -188,10 +189,6 @@ def _execute_tool(
         logger.info(f"Executing tool: {tool_name} | args: {arguments}")
         result = func(**call_args)
         log_tool_call(channel, user_id, tool_name, arguments, result, success=True)
-
-        if tool_name == "escalate_to_human":
-            log_escalation(channel, user_id, arguments.get("reason", ""), arguments.get("customer_email"))
-
         return result
 
     except Exception as e:
@@ -215,6 +212,24 @@ def handle_message(msg: NormalizedMessage) -> AgentResponse:
         AgentResponse with the final reply text and escalation status.
     """
     logger.info(f"Handling message from {msg.channel}:{msg.user_id}")
+
+     # If a human is already handling this customer, don't let the AI
+    # jump back in — just log their message to the ticket thread and
+    # let the human see it.
+    open_ticket = get_open_ticket(msg.channel, msg.user_id)
+    if open_ticket:
+        add_ticket_message(open_ticket["id"], "customer", msg.text)
+        logger.info(
+            f"Message routed to open ticket #{open_ticket['id']} "
+            f"instead of AI — human is handling this conversation."
+        )
+        return AgentResponse(
+            text=(
+                "Thanks for the extra info — I've added it to your "
+                "open support ticket. Our team will get back to you shortly."
+            ),
+            escalated=True,
+        )
 
     # Load conversation history
     history = memory.get_history(msg.channel, msg.user_id)

@@ -52,40 +52,28 @@ tool_calls_table = Table(
 )
 
 
-escalations_table = Table(
-    "escalations",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("channel", String(50), nullable=False),
-    Column("user_id", String(255), nullable=False),
-    Column("reason", Text, nullable=False),
-    Column("resolved", Boolean, nullable=False, default=False),
-    Column("timestamp", DateTime(timezone=True), nullable=False),
-)
 
-pending_replies_table = Table(
-    "pending_replies",
+tickets_table = Table(
+    "tickets",
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("channel", String(50), nullable=False),
-    Column("user_id", String(255), nullable=False),
-    Column("message", Text, nullable=False),
-    Column("delivered", Boolean, nullable=False, default=False),
-    Column("timestamp", DateTime(timezone=True), nullable=False),
-)
-
-pending_returns_table = Table(
-    "pending_returns",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("order_number", String(50), nullable=False),
     Column("channel", String(50), nullable=False),
     Column("user_id", String(255), nullable=False),
     Column("customer_email", String(255), nullable=True),
-    Column("tracking_number", String(255), nullable=True),
-    Column("status", String(20), nullable=False, default="awaiting_return"),
+    Column("subject", Text, nullable=False),
+    Column("status", String(20), nullable=False, default="open"),  # open, pending, resolved
     Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("refunded_at", DateTime(timezone=True), nullable=True),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+ticket_messages_table = Table(
+    "ticket_messages",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("ticket_id", Integer, nullable=False),
+    Column("sender", String(20), nullable=False),  # customer, agent, system
+    Column("message", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
 )
 
 def init_db() -> None:
