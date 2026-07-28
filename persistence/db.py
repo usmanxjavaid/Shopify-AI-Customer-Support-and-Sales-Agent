@@ -37,11 +37,6 @@ engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
 
 metadata = MetaData()
 
-# ------------------------------------------------------------------
-# Table: tool_calls
-# ------------------------------------------------------------------
-# Records every single tool the agent executes, successful or not.
-# This is the core audit trail for "what did the agent actually do."
 
 tool_calls_table = Table(
     "tool_calls",
@@ -56,11 +51,6 @@ tool_calls_table = Table(
     Column("timestamp", DateTime(timezone=True), nullable=False),
 )
 
-# ------------------------------------------------------------------
-# Table: escalations
-# ------------------------------------------------------------------
-# Records every escalation to a human, with a resolved flag so a
-# future admin dashboard can show "pending" vs "resolved" queues.
 
 escalations_table = Table(
     "escalations",
@@ -84,6 +74,19 @@ pending_replies_table = Table(
     Column("timestamp", DateTime(timezone=True), nullable=False),
 )
 
+pending_returns_table = Table(
+    "pending_returns",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("order_number", String(50), nullable=False),
+    Column("channel", String(50), nullable=False),
+    Column("user_id", String(255), nullable=False),
+    Column("customer_email", String(255), nullable=True),
+    Column("tracking_number", String(255), nullable=True),
+    Column("status", String(20), nullable=False, default="awaiting_return"),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("refunded_at", DateTime(timezone=True), nullable=True),
+)
 
 def init_db() -> None:
     """

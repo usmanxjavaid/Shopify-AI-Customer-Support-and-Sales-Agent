@@ -169,20 +169,21 @@ TOOL_SCHEMAS = [
             "name": "escalate_to_human",
             "description": (
                 "Hand off the conversation to a human support agent. "
-                "Use this for frustrated customers, ineligible refunds, "
-                "explicit requests for a human, or anything outside "
-                "your capabilities."
+                "For web channel customers, try to get their email first "
+                "so our team can follow up — ask for it if not already "
+                "provided. For Telegram, email is optional."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "reason": {
                         "type": "string",
-                        "description": (
-                            "Clear explanation of why escalation is needed, "
-                            "for the human agent's context."
-                        ),
-                    }
+                        "description": "Clear explanation of why escalation is needed.",
+                    },
+                    "customer_email": {
+                        "type": "string",
+                        "description": "Customer's email address, if available.",
+                    },
                 },
                 "required": ["reason"],
             },

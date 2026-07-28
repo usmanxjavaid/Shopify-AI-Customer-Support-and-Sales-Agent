@@ -30,7 +30,7 @@ Key principle:
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
-
+from enum import Enum
 from config import settings
 from logger import get_logger
 
@@ -60,100 +60,79 @@ class EligibilityResult:
 # Refund eligibility rules
 # ------------------------------------------------------------------
 
-def check_refund_eligibility(
+
+class RefundPath(Enum):
+    """The specific automated path a refund request should take."""
+    NOT_PAID = "not_paid"
+    ALREADY_REFUNDED = "already_refunded"
+    AUTO_REFUND = "auto_refund"                # not fulfilled — refund now
+    CANCEL_AND_REFUND = "cancel_and_refund"     # fulfilled, not shipped — cancel + refund
+    REQUIRES_RETURN = "requires_return"         # shipped — needs physical return first
+    NOT_ELIGIBLE = "not_eligible"               # outside policy window/amount
+
+
+def determine_refund_path(
     order_total: float,
     order_fulfilled_at: Optional[datetime],
     fulfillment_status: Optional[str],
     financial_status: str,
-) -> EligibilityResult:
+    tracking_number: Optional[str],
+) -> tuple[RefundPath, str]:
     """
-    Checks whether an order qualifies for an automatic refund.
+    Decides which automated refund path applies, matching real
+    Shopify capabilities:
 
-    Rules (configured via .env so clients can customize):
-        1. Order must be in "paid" financial status
-        2. Order must be fulfilled (we can't refund unfulfilled orders
-           automatically — too many edge cases)
-        3. Order must be within REFUND_MAX_DAYS of fulfillment date
-        4. Order total must be <= REFUND_MAX_AMOUNT
-
-    If ANY rule fails → not eligible → agent must escalate to human.
-
-    Args:
-        order_total:        Total order value in store currency.
-        order_fulfilled_at: When the order was fulfilled/shipped.
-                            None if order hasn't been fulfilled yet.
-        fulfillment_status: Shopify fulfillment status string.
-        financial_status:   Shopify financial status string.
+        Unfulfilled          -> AUTO_REFUND
+        Fulfilled, no tracking (not actually shipped yet)
+                              -> CANCEL_AND_REFUND
+        Fulfilled WITH tracking (physically shipped)
+                              -> REQUIRES_RETURN (never auto-refunded —
+                                 a human must confirm the item is
+                                 physically back before refunding)
 
     Returns:
-        EligibilityResult with eligible=True/False and a reason string.
+        (RefundPath, human-readable reason)
     """
-    logger.debug(
-        f"Checking refund eligibility | total={order_total} "
-        f"fulfillment_status={fulfillment_status} "
-        f"financial_status={financial_status}"
-    )
+    if financial_status == "refunded":
+        return RefundPath.ALREADY_REFUNDED, "This order has already been refunded."
 
-    # Rule 1: Must be paid
     if financial_status != "paid":
-        reason = (
-            f"Order financial status is '{financial_status}', "
-            f"not 'paid'. Cannot auto-refund."
-        )
-        logger.info(f"Refund not eligible: {reason}")
-        return EligibilityResult(eligible=False, reason=reason)
+        return RefundPath.NOT_PAID, f"Order financial status is '{financial_status}', not 'paid'."
 
-    # Rule 2: Must be fulfilled
-    if fulfillment_status != "fulfilled":
-        reason = (
-            f"Order has not been fulfilled yet "
-            f"(status: '{fulfillment_status}'). "
-            f"Cannot refund an unshipped order automatically."
-        )
-        logger.info(f"Refund not eligible: {reason}")
-        return EligibilityResult(eligible=False, reason=reason)
-
-    # Rule 3: Fulfillment date must be known
-    if order_fulfilled_at is None:
-        reason = "Order fulfillment date is unknown. Cannot verify return window."
-        logger.info(f"Refund not eligible: {reason}")
-        return EligibilityResult(eligible=False, reason=reason)
-
-    # Rule 4: Must be within the time window
     now = datetime.now(timezone.utc)
 
-    # Ensure timezone-aware for comparison
-    if order_fulfilled_at.tzinfo is None:
-        order_fulfilled_at = order_fulfilled_at.replace(tzinfo=timezone.utc)
+    # Case 1: not fulfilled at all — safe to refund immediately
+    if fulfillment_status not in ("fulfilled", "partial"):
+        return RefundPath.AUTO_REFUND, "Order has not shipped — refunding directly."
 
-    days_since_fulfillment = (now - order_fulfilled_at).days
-
-    if days_since_fulfillment > settings.REFUND_MAX_DAYS:
-        reason = (
-            f"Order was fulfilled {days_since_fulfillment} days ago, "
-            f"which exceeds our {settings.REFUND_MAX_DAYS}-day return window."
+    # Case 2: fulfilled, but no tracking number assigned yet — hasn't
+    # actually left the warehouse, safe to cancel + refund
+    if not tracking_number:
+        return RefundPath.CANCEL_AND_REFUND, (
+            "Order is marked fulfilled but has no tracking number yet "
+            "— not physically shipped. Cancelling fulfillment and refunding."
         )
-        logger.info(f"Refund not eligible: {reason}")
-        return EligibilityResult(eligible=False, reason=reason)
 
-    # Rule 5: Must be within amount limit
+    # Case 3: genuinely shipped (has tracking) — check policy window/amount
+    # before even offering the return path
+    if order_fulfilled_at:
+        if order_fulfilled_at.tzinfo is None:
+            order_fulfilled_at = order_fulfilled_at.replace(tzinfo=timezone.utc)
+        days_since = (now - order_fulfilled_at).days
+
+        if days_since > settings.REFUND_MAX_DAYS:
+            return RefundPath.NOT_ELIGIBLE, (
+                f"Order was fulfilled {days_since} days ago, exceeding "
+                f"the {settings.REFUND_MAX_DAYS}-day return window."
+            )
+
     if order_total > settings.REFUND_MAX_AMOUNT:
-        reason = (
-            f"Order total ({order_total:.2f}) exceeds the auto-refund "
-            f"limit of {settings.REFUND_MAX_AMOUNT:.2f}. "
-            f"Requires human approval."
+        return RefundPath.NOT_ELIGIBLE, (
+            f"Order total ({order_total:.2f}) exceeds the auto-return "
+            f"limit of {settings.REFUND_MAX_AMOUNT:.2f}. Requires manual review."
         )
-        logger.info(f"Refund not eligible: {reason}")
-        return EligibilityResult(eligible=False, reason=reason)
 
-    # All rules passed
-    reason = (
-        f"Order is within the {settings.REFUND_MAX_DAYS}-day return window "
-        f"({days_since_fulfillment} days since fulfillment) and total "
-        f"({order_total:.2f}) is within auto-approve limit."
+    return RefundPath.REQUIRES_RETURN, (
+        "Order has shipped. A physical return is required before a "
+        "refund can be issued."
     )
-    logger.info(f"Refund eligible: {reason}")
-    return EligibilityResult(eligible=True, reason=reason)
-
-
-logger.debug("core.guardrails loaded successfully")

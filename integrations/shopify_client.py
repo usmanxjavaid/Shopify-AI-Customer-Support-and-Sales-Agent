@@ -491,6 +491,13 @@ class ShopifyClient:
         customer = raw.get("customer") or {}
         customer_email = customer.get("email")
 
+        fulfillments = raw.get("fulfillments", [])
+        tracking_number = None
+        fulfillment_id = None
+        if fulfillments:
+            fulfillment_id = fulfillments[0].get("id")
+            tracking_number = fulfillments[0].get("tracking_number")
+
         return OrderSummary(
             order_id=raw["id"],
             order_number=raw.get("name", f"#{raw['id']}"),
@@ -500,5 +507,33 @@ class ShopifyClient:
             currency=raw.get("currency", "USD"),
             line_items=line_items,
             created_at=created_at,
+            tracking_number=tracking_number,
+            fulfillment_id=fulfillment_id,
             customer_email=customer_email,
         )
+
+    # ------------------------------------------------------------------
+    # Cancel Fulfillment
+    # ------------------------------------------------------------------
+    
+    def cancel_fulfillment(self, fulfillment_id: int) -> bool:
+        """
+        Cancels a fulfillment that hasn't actually shipped yet
+        (no carrier tracking movement). Used when a customer wants
+        to cancel/refund an order that's marked fulfilled in Shopify
+        but hasn't physically left the warehouse.
+
+        Args:
+            fulfillment_id: Shopify fulfillment ID.
+
+        Returns:
+            True if cancelled successfully, False otherwise.
+        """
+        logger.info(f"Cancelling fulfillment {fulfillment_id}")
+        try:
+            self._post(f"/fulfillments/{fulfillment_id}/cancel.json", {})
+            logger.info(f"Fulfillment {fulfillment_id} cancelled")
+            return True
+        except RuntimeError as e:
+            logger.error(f"Failed to cancel fulfillment {fulfillment_id}: {e}")
+            return False

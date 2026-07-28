@@ -132,6 +132,8 @@ class OrderSummary:
     currency: str
     line_items: list[str]
     created_at: datetime
+    tracking_number: Optional[str] = None
+    fulfillment_id: Optional[int] = None
     customer_email: Optional[str] = None
 
 logger.debug("core.models loaded successfully")

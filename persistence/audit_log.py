@@ -56,7 +56,7 @@ def log_tool_call(
         logger.error(f"Failed to log tool call: {e}")
 
 
-def log_escalation(channel: str, user_id: str, reason: str) -> None:
+def log_escalation(channel: str, user_id: str, reason: str, customer_email: str = None) -> None:
     """
     Records an escalation to the permanent audit log.
 
@@ -64,6 +64,7 @@ def log_escalation(channel: str, user_id: str, reason: str) -> None:
         channel: Which channel the user is on.
         user_id: The user's stable ID within that channel.
         reason:  Why the conversation was escalated.
+        email: The user's email to contact them
     """
     try:
         with engine.begin() as conn:
@@ -72,14 +73,11 @@ def log_escalation(channel: str, user_id: str, reason: str) -> None:
                     channel=channel,
                     user_id=user_id,
                     reason=reason,
+                    customer_email=customer_email,
                     resolved=False,
                     timestamp=datetime.now(timezone.utc),
                 )
             )
         logger.info(f"Logged escalation for {channel}:{user_id}")
-
     except Exception as e:
         logger.error(f"Failed to log escalation: {e}")
-
-
-logger.debug("persistence.audit_log loaded successfully")

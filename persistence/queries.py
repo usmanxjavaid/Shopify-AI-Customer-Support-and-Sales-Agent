@@ -205,5 +205,55 @@ def mark_escalation_resolved(escalation_id: int) -> bool:
         logger.error(f"Failed to resolve escalation {escalation_id}: {e}")
         return False
 
+from persistence.db import pending_returns_table
+
+
+def create_pending_return(
+    order_number: str, channel: str, user_id: str,
+    customer_email: str, tracking_number: str
+) -> None:
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                pending_returns_table.insert().values(
+                    order_number=order_number,
+                    channel=channel,
+                    user_id=user_id,
+                    customer_email=customer_email,
+                    tracking_number=tracking_number,
+                    status="awaiting_return",
+                    created_at=datetime.now(timezone.utc),
+                )
+            )
+        logger.info(f"Created pending return for order #{order_number}")
+    except Exception as e:
+        logger.error(f"Failed to create pending return: {e}")
+
+
+def get_pending_returns() -> list[dict]:
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                select(pending_returns_table)
+                .where(pending_returns_table.c.status == "awaiting_return")
+                .order_by(pending_returns_table.c.created_at.desc())
+            ).mappings().all()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"Failed to fetch pending returns: {e}")
+        return []
+
+
+def mark_return_refunded(return_id: int) -> None:
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                update(pending_returns_table)
+                .where(pending_returns_table.c.id == return_id)
+                .values(status="refunded", refunded_at=datetime.now(timezone.utc))
+            )
+        logger.info(f"Marked return {return_id} as refunded")
+    except Exception as e:
+        logger.error(f"Failed to mark return refunded: {e}")
 
 logger.debug("persistence.queries loaded successfully")

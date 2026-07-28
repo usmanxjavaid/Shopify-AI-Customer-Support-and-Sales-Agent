@@ -187,7 +187,7 @@ def _execute_tool(
         log_tool_call(channel, user_id, tool_name, arguments, result, success=True)
 
         if tool_name == "escalate_to_human":
-            log_escalation(channel, user_id, arguments.get("reason", ""))
+            log_escalation(channel, user_id, arguments.get("reason", ""), arguments.get("customer_email"))
 
         return result
 

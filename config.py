@@ -52,6 +52,10 @@ class Settings:
     # --- PostgreSQL (Neon) — persistence, audit logs ---
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 
+    # --- Resend (email) ---
+    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
+    OWNER_EMAIL: str = os.getenv("OWNER_EMAIL", "")
+    
     # --- Admin Dashboard ---
     ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
 

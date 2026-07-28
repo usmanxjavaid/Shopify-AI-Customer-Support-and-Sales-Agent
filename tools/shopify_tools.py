@@ -24,7 +24,8 @@ Flow:
 
 from typing import Optional
 from integrations.shopify_client import ShopifyClient
-from core.guardrails import check_refund_eligibility
+from core.guardrails import determine_refund_path, RefundPath
+from persistence.queries import create_pending_return
 import requests as http_requests
 from config import settings
 from logger import get_logger
@@ -266,187 +267,172 @@ def verify_customer_email(order_number: str, email: str) -> str:
 # Refund tools
 # ------------------------------------------------------------------
 
-def initiate_refund(
-    order_number: str, reason: str, verified_email: str
-) -> str:
+
+def initiate_refund(order_number: str, reason: str, verified_email: str) -> str:
     """
-    Attempts to initiate a refund for an order.
+    Processes a refund request by routing it through the correct
+    automated path based on real shipment status:
 
-    REQUIRES identity verification first. You must call
-    verify_customer_email and receive "VERIFIED" before ever
-    calling this tool. Pass the same email that was verified.
-
-    Guardrails run automatically inside this tool. If the order
-    does not meet refund policy requirements, the refund will NOT
-    be issued and you will receive an instruction to escalate.
-    Always follow that instruction — never try to override it.
-
-    Args:
-        order_number:   The order number to refund e.g. "1001".
-        reason:         The customer's stated reason for the refund.
-        verified_email: The email that was confirmed via
-                        verify_customer_email. Required — do not
-                        guess or skip this.
-
-    Returns:
-        Plain text result — either refund confirmation or
-        an instruction to escalate with the reason why.
+        - Not shipped yet        -> refunded immediately
+        - Shipped, no tracking   -> fulfillment cancelled, then refunded
+        - Actually shipped       -> a return is started; refund happens
+                                     ONLY after a human confirms the
+                                     item has physically been returned
     """
     cleaned = order_number.strip().lstrip("#").strip()
-    logger.info(
-        f"Refund requested for order #{cleaned} | reason: {reason} | "
-        f"claimed verified email: {verified_email}"
-    )
+    logger.info(f"Refund requested for order #{cleaned} | reason: {reason}")
 
     try:
         orders = _client.get_orders_by_number(cleaned)
-
         if not orders:
-            return (
-                f"Order #{cleaned} could not be found. "
-                f"Please ask the customer to verify their order number."
-            )
+            return f"Order #{cleaned} could not be found."
 
         order = orders[0]
 
-        # Re-verify server-side — never trust the LLM's claim alone
         if (
             not order.customer_email
-            or order.customer_email.strip().lower()
-            != verified_email.strip().lower()
+            or order.customer_email.strip().lower() != verified_email.strip().lower()
         ):
-            logger.warning(
-                f"Refund blocked — email verification failed for "
-                f"order #{cleaned}"
-            )
             return (
                 "REFUND_NOT_ELIGIBLE: Identity could not be verified "
                 "for this order. Please escalate to a human agent."
             )
 
-        eligibility = check_refund_eligibility(
+        path, path_reason = determine_refund_path(
             order_total=order.total_price,
             order_fulfilled_at=order.created_at,
             fulfillment_status=order.fulfillment_status,
             financial_status=order.status,
+            tracking_number=order.tracking_number,
         )
 
-        if not eligibility.eligible:
-            logger.info(
-                f"Refund blocked for order {order.order_number}: "
-                f"{eligibility.reason}"
+        if path == RefundPath.ALREADY_REFUNDED:
+            return f"REFUND_NOT_ELIGIBLE: {path_reason}"
+
+        if path == RefundPath.NOT_PAID:
+            return f"REFUND_NOT_ELIGIBLE: {path_reason} Please escalate to a human agent."
+
+        if path == RefundPath.NOT_ELIGIBLE:
+            return f"REFUND_NOT_ELIGIBLE: {path_reason} Please escalate to a human agent."
+
+        if path == RefundPath.AUTO_REFUND:
+            success = _client.create_refund(order.order_id, order.total_price, reason)
+            if success:
+                return (
+                    f"Refund successfully initiated for order {order.order_number}. "
+                    f"{order.currency} {order.total_price:.2f} will be returned "
+                    f"within 5-7 business days."
+                )
+            return "REFUND_FAILED: Could not process refund. Please escalate."
+
+        if path == RefundPath.CANCEL_AND_REFUND:
+            if order.fulfillment_id:
+                _client.cancel_fulfillment(order.fulfillment_id)
+            success = _client.create_refund(order.order_id, order.total_price, reason)
+            if success:
+                return (
+                    f"Your order {order.order_number} hadn't actually shipped yet, "
+                    f"so we've cancelled it and refunded {order.currency} "
+                    f"{order.total_price:.2f}, returning within 5-7 business days."
+                )
+            return "REFUND_FAILED: Could not process refund. Please escalate."
+
+        if path == RefundPath.REQUIRES_RETURN:
+            create_pending_return(
+                order_number=order.order_number,
+                channel="unknown",  # filled in by orchestrator context if needed
+                user_id="unknown",
+                customer_email=verified_email,
+                tracking_number=order.tracking_number,
             )
             return (
-                f"REFUND_NOT_ELIGIBLE: {eligibility.reason} "
-                f"Please escalate this to a human agent."
+                f"RETURN_REQUIRED: Order {order.order_number} has already shipped, "
+                f"so we can't refund it until we receive the item back. Please ship "
+                f"it back to us — once it arrives, your refund of {order.currency} "
+                f"{order.total_price:.2f} will be processed automatically. "
+                f"Our team will follow up with return shipping instructions."
             )
 
-        success = _client.create_refund(
-            order_id=order.order_id,
-            amount=order.total_price,
-            reason=reason,
-        )
-
-        if success:
-            logger.info(
-                f"Refund issued for order {order.order_number}"
-            )
-            return (
-                f"Refund successfully initiated for order "
-                f"{order.order_number}. "
-                f"{order.currency} {order.total_price:.2f} will be "
-                f"returned to the original payment method "
-                f"within 5-7 business days."
-            )
-        else:
-            logger.error(
-                f"Refund API call failed for "
-                f"order {order.order_number}"
-            )
-            return (
-                f"REFUND_FAILED: Could not process refund for order "
-                f"{order.order_number}. "
-                f"Please escalate to a human agent."
-            )
+        return "REFUND_FAILED: Unexpected state. Please escalate to a human agent."
 
     except Exception as e:
         logger.error(f"Error processing refund for #{cleaned}: {e}")
-        return (
-            "An error occurred while processing the refund. "
-            "Please escalate this to a human agent."
-        )
+        return "An error occurred while processing the refund. Please escalate."
 
 
 # ------------------------------------------------------------------
 # Escalation tool
 # ------------------------------------------------------------------
 
-def escalate_to_human(reason: str) -> str:
+def escalate_to_human(reason: str, customer_email: str = None) -> str:
     """
     Escalates the current conversation to a human support agent.
 
-    Sends a real-time notification to the store owner via Telegram,
-    so escalations don't just get logged silently — someone actually
-    gets pinged to follow up.
+    For web channel customers, ALWAYS try to get their email first
+    (ask them for it if you don't have one) before escalating, so
+    our support team can follow up by email — web chat sessions
+    aren't reliably reachable later otherwise.
 
-    Use this when:
-        - The customer asks to speak to a human
-        - A refund tool returns REFUND_NOT_ELIGIBLE or REFUND_FAILED
-        - The customer seems frustrated, angry, or upset
-        - The request is outside your capabilities
-        - You are uncertain about the right course of action
+    For Telegram customers, email is optional since they're always
+    reachable directly through the bot.
 
     Args:
         reason: Clear explanation of why escalation is needed.
+        customer_email: Customer's email, if available/applicable.
 
     Returns:
         Confirmation message to relay to the customer.
     """
-    logger.warning(f"Escalating to human | reason: {reason}")
-
-    _notify_owner(reason)
+    logger.warning(f"Escalating to human | reason: {reason} | email: {customer_email}")
+    _notify_owner(reason, customer_email)
 
     return (
         f"ESCALATED: {reason} | "
         f"A human agent has been notified and will follow up "
-        f"with you shortly. We apologize for any inconvenience."
+        f"with you shortly{' by email' if customer_email else ''}. "
+        f"We apologize for any inconvenience."
     )
 
-
-def _notify_owner(reason: str) -> None:
+def _notify_owner(reason: str, customer_email: str = None) -> None:
     """
-    Sends a Telegram message to the store owner about an escalation.
+    Notifies the store owner of an escalation via Telegram AND email.
 
-    Uses Telegram's raw HTTP API directly (not python-telegram-bot)
-    to avoid circular imports with the adapter layer — this keeps
-    the tools layer independent of any specific channel.
-
-    Args:
-        reason: Why this conversation was escalated.
+    Telegram: instant alert.
+    Email: the actual ticket — replying to it will (once the inbound
+    webhook is built) route the reply back to the customer.
     """
-    if not settings.TELEGRAM_BOT_TOKEN or not settings.OWNER_TELEGRAM_CHAT_ID:
-        logger.warning(
-            "Cannot notify owner — TELEGRAM_BOT_TOKEN or "
-            "OWNER_TELEGRAM_CHAT_ID not configured"
-        )
-        return
+    # Telegram alert (existing behavior)
+    if settings.TELEGRAM_BOT_TOKEN and settings.OWNER_TELEGRAM_CHAT_ID:
+        try:
+            http_requests.post(
+                f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={
+                    "chat_id": settings.OWNER_TELEGRAM_CHAT_ID,
+                    "text": f"🚨 Escalation needed\n\nReason: {reason}",
+                },
+                timeout=10,
+            )
+        except http_requests.exceptions.RequestException as e:
+            logger.error(f"Failed to notify owner via Telegram: {e}")
 
-    url = (
-        f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}"
-        f"/sendMessage"
-    )
-    message = f"🚨 Escalation needed\n\nReason: {reason}"
-
-    try:
-        http_requests.post(
-            url,
-            json={
-                "chat_id": settings.OWNER_TELEGRAM_CHAT_ID,
-                "text": message,
-            },
-            timeout=10,
-        )
-        logger.info("Owner notified of escalation via Telegram")
-
-    except http_requests.exceptions.RequestException as e:
-        logger.error(f"Failed to notify owner: {e}")
+    # Email ticket
+    if settings.RESEND_API_KEY and settings.OWNER_EMAIL:
+        try:
+            http_requests.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+                json={
+                    "from": "Velvora Support <onboarding@resend.dev>",
+                    "to": [settings.OWNER_EMAIL],
+                    "subject": f"New escalation: {reason[:60]}",
+                    "text": (
+                        f"Reason: {reason}\n\n"
+                        f"Customer email: {customer_email or 'not provided'}\n\n"
+                        f"Reply to this email to respond to the customer."
+                    ),
+                },
+                timeout=10,
+            )
+            logger.info("Owner notified via email")
+        except http_requests.exceptions.RequestException as e:
+            logger.error(f"Failed to notify owner via email: {e}")

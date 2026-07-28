@@ -188,6 +188,33 @@ async def admin_dashboard(request: Request):
     """)
 
 
+from persistence.queries import get_pending_returns, mark_return_refunded
+
+
+@router.post("/admin/confirm-return/{return_id}")
+async def confirm_return(return_id: int, request: Request):
+    """
+    Human confirms a physically returned item has arrived — THIS is
+    what actually triggers the refund for shipped orders. Never
+    automated, by design.
+    """
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/admin")
+
+    returns = get_pending_returns()
+    target = next((r for r in returns if r["id"] == return_id), None)
+
+    if target:
+        orders = _client.get_orders_by_number(target["order_number"].lstrip("#"))
+        if orders:
+            order = orders[0]
+            _client.create_refund(order.order_id, order.total_price, "Return confirmed by staff")
+            mark_return_refunded(return_id)
+            logger.info(f"Return confirmed and refunded for order {target['order_number']}")
+
+    return RedirectResponse(url="/admin/dashboard", status_code=303)
+
+
 @router.post("/admin/resolve/{escalation_id}")
 async def resolve_escalation(escalation_id: int, request: Request):
     """Marks an escalation as resolved, then redirects back to dashboard."""
