@@ -36,9 +36,4 @@ jobs:
           pip install pytest python-dotenv
 
       - name: Run guardrail tests
-        run: |
-          if [ -d tests ] && [ "$(find tests -name 'test_*.py')" ]; then
-            pytest -v
-          else
-            echo "No tests found. Skipping."
-          fi
+        run: pytest tests/test_guardrails.py -v
