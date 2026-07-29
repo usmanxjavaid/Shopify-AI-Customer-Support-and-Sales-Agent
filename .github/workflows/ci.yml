@@ -37,8 +37,8 @@ jobs:
 
       - name: Run guardrail tests
         run: |
-            if [ -d tests ] && [ "$(find tests -name 'test_*.py')" ]; then
-              pytest -v
-            else
-              echo "No tests found. Skipping."
-            fi
+          if [ -d tests ] && [ "$(find tests -name 'test_*.py')" ]; then
+            pytest -v
+          else
+            echo "No tests found. Skipping."
+          fi
