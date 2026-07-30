@@ -26,56 +26,57 @@ A production-grade AI customer support agent for Shopify stores — combining re
 
 ## 📁 Project Structure
 
+```
 adapters/
-telegram_adapter.py - Telegram bot (text + native voice bubbles)
-web_adapter.py - FastAPI endpoints for the web widget (text + voice)
-admin_routes.py - password-protected admin dashboard + ticket inbox
-email_webhook.py - receives inbound email replies, routes to customers
+    telegram_adapter.py    - Telegram bot (text + native voice bubbles)
+    web_adapter.py          - FastAPI endpoints for the web widget (text + voice)
+    admin_routes.py           - password-protected admin dashboard + ticket inbox
+    email_webhook.py            - receives inbound email replies, routes to customers
 
 core/
-orchestrator.py - tool-calling agent loop; steps back once a ticket is open
-guardrails.py - shipment-aware refund path logic (pure logic, testable)
-memory.py - Redis-backed conversation history
-prompts.py - system prompt
-tool_schemas.py - tool definitions for the LLM
-models.py - shared data shapes
+    orchestrator.py         - tool-calling agent loop; steps back once a ticket is open
+    guardrails.py             - shipment-aware refund path logic (pure logic, testable)
+    memory.py                   - Redis-backed conversation history
+    prompts.py                    - system prompt
+    tool_schemas.py                 - tool definitions for the LLM
+    models.py                         - shared data shapes
 
 tools/
-shopify_tools.py - get_order_status, initiate_refund, verify_customer_email, escalate_to_human
-knowledge_tools.py - search_knowledge_base
+    shopify_tools.py        - get_order_status, initiate_refund, verify_customer_email, escalate_to_human
+    knowledge_tools.py         - search_knowledge_base
 
 integrations/
-shopify_client.py - Shopify Admin API wrapper (orders, products, fulfillment orders, refunds)
-voice_service.py - shared speech-to-text / text-to-speech (Groq Whisper, Gemini TTS)
+    shopify_client.py       - Shopify Admin API wrapper (orders, products, fulfillment orders, refunds)
+    voice_service.py           - shared speech-to-text / text-to-speech (Groq Whisper, Gemini TTS)
 
 knowledge_base/
-document_readers.py - PDF/DOCX/TXT to raw text
-chunker.py - raw text to overlapping chunks
-vector_store.py - chunks to ChromaDB (add/query/clear)
-indexer.py - orchestrates the full indexing pipeline
+    document_readers.py     - PDF/DOCX/TXT to raw text
+    chunker.py                 - raw text to overlapping chunks
+    vector_store.py               - chunks to ChromaDB (add/query/clear)
+    indexer.py                       - orchestrates the full indexing pipeline
 
-knowledge/ - store policy documents live here (PDF/DOCX/TXT)
+knowledge/                  - store policy documents live here (PDF/DOCX/TXT)
 
 persistence/
-db.py - PostgreSQL table definitions (tickets, messages, tool_calls, pending_returns)
-audit_log.py - tool call logging (write)
-queries.py - dashboard + ticket queries (read/write)
+    db.py                    - PostgreSQL table definitions (tickets, messages, tool_calls)
+    audit_log.py                - tool call logging (write)
+    queries.py                     - dashboard + ticket queries (read/write)
 
 tests/
-test_guardrails.py - automated pytest suite for refund path logic
+    test_guardrails.py      - automated pytest suite for refund path logic
 
 config.py
 logger.py
-main.py - FastAPI entry point
-build_index.py - rebuild the knowledge base index
+main.py                     - FastAPI entry point
+build_index.py                - rebuild the knowledge base index
 requirements.txt
 Dockerfile
 docker-compose.yml
 
 .github/
-workflows/
-ci.yml - GitHub Actions test runner
-
+    workflows/
+        ci.yml               - GitHub Actions test runner
+```
 
 ## ⚙️ Setup & Installation
 
@@ -170,30 +171,38 @@ Copy the widget snippet into a Shopify theme's `theme.liquid`, right before `</b
 4. Replying to any ticket notification email now routes straight back to the customer
 
 ## 🔄 Conversation Flow
-Customer sends a message (text or voice, any channel)
-If a ticket is already open for this customer, the AI steps back
-and routes the message straight into the ticket thread — a human
-is already handling it
-Otherwise, the orchestrator sends message + history + tool list
-to the LLM
-LLM decides: reply directly, or call a tool
-get_order_status -> real-time order lookup
-get_all_products -> product catalog
-get_product_details -> pricing and stock for one product
-search_knowledge_base -> answers from real policy documents
-verify_customer_email -> required before any refund
-initiate_refund -> unshipped orders refund
-automatically; fulfilled
-orders create a return
-ticket instead
-escalate_to_human -> creates/updates a support
-ticket, notifies the owner
-via Telegram + email
-Every tool call is logged to PostgreSQL for a full audit trail
-The store owner can reply from the admin dashboard or straight
-from their email inbox — either way, the reply reaches the
-customer on their original channel
-Final reply is sent back through the original channel (text or voice)
+
+```
+1. Customer sends a message (text or voice, any channel)
+
+2. If a ticket is already open for this customer, the AI steps back
+   and routes the message straight into the ticket thread instead
+   of responding itself -- a human is already handling it
+
+3. Otherwise, the orchestrator sends message + history + tool list
+   to the LLM
+
+4. LLM decides: reply directly, or call a tool
+   - get_order_status       -> real-time order lookup
+   - get_all_products        -> product catalog
+   - get_product_details       -> pricing and stock for one product
+   - search_knowledge_base       -> answers from real policy documents
+   - verify_customer_email         -> required before any refund
+   - initiate_refund                 -> unshipped orders refund
+                                        automatically; fulfilled orders
+                                        create a return ticket instead
+   - escalate_to_human                 -> creates/updates a support
+                                          ticket, notifies the owner
+                                          via Telegram and email
+
+5. Every tool call is logged to PostgreSQL for a full audit trail
+
+6. The store owner can reply from the admin dashboard or directly
+   from their email inbox -- either way, the reply reaches the
+   customer on their original channel
+
+7. Final reply is sent back through the original channel (text or voice)
+```
 
 ## 🏗️ Tech Stack
 
