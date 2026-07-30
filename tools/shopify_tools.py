@@ -25,7 +25,6 @@ Flow:
 from typing import Optional
 from integrations.shopify_client import ShopifyClient
 from core.guardrails import determine_refund_path, RefundPath
-from persistence.queries import create_pending_return
 from persistence.queries import get_open_ticket, create_ticket, add_ticket_message
 import requests as http_requests
 from config import settings
@@ -345,48 +344,32 @@ def initiate_refund(
                 )
             return "REFUND_FAILED: Could not process refund. Please escalate."
 
-        if path == RefundPath.CANCEL_AND_REFUND:
-            cancel_success = False
-            if order.fulfillment_id:
-                cancel_success = _client.cancel_order_fulfillment(order.order_id)
-
-            if not cancel_success:
-                logger.warning(
-                    f"Could not confirm fulfillment cancellation for order "
-                    f"{order.order_number} — refusing to refund automatically."
-                )
-                return (
-                    "REFUND_NOT_ELIGIBLE: Could not confirm the order was "
-                    "stopped before shipping. Please escalate to a human agent "
-                    "for manual verification before refunding."
-                )
-
-            success = _client.create_refund(order.order_id, order.total_price, reason)
-            if success:
-                return (
-                    f"Your order {order.order_number} hadn't actually shipped yet, "
-                    f"so we've cancelled it and refunded {order.currency} "
-                    f"{order.total_price:.2f}, returning within 5-7 business days."
-                )
-            return "REFUND_FAILED: Could not process refund. Please escalate."
-
         if path == RefundPath.REQUIRES_RETURN:
-            create_pending_return(
-                order_number=order.order_number,
-                channel=channel,
-                user_id=user_id,
-                customer_email=verified_email,
-                tracking_number=order.tracking_number,
-            )
-            return (
-                f"RETURN_REQUIRED: Order {order.order_number} has already shipped, "
-                f"so we can't refund it until we receive the item back. Please ship "
-                f"it back to us — once it arrives, your refund of {order.currency} "
-                f"{order.total_price:.2f} will be processed automatically. "
-                f"Our team will follow up with return shipping instructions."
-            )
+            existing = get_open_ticket(channel, user_id)
+            if existing:
+                ticket_id = existing["id"]
+                add_ticket_message(
+                    ticket_id, "system",
+                    f"Return required for order {order.order_number}: {path_reason}"
+                )
+            else:
+                ticket_id = create_ticket(
+                    channel, user_id, verified_email,
+                    f"Return required for order {order.order_number}: {reason}"
+                )
+                _send_ticket_notifications(
+                    ticket_id, channel,
+                    f"Order {order.order_number} needs a confirmed return before refunding.",
+                    verified_email,
+                )
 
-        return "REFUND_FAILED: Unexpected state. Please escalate to a human agent."
+            return (
+                f"RETURN_REQUIRED: Order {order.order_number} has been fulfilled, "
+                f"so we can't refund it until we receive the item back (Ticket #{ticket_id}). "
+                f"Please ship it back to us — once our team confirms it's arrived, your "
+                f"refund of {order.currency} {order.total_price:.2f} will be processed. "
+                f"We'll follow up with return shipping instructions."
+            )
 
     except Exception as e:
         logger.error(f"Error processing refund for #{cleaned}: {e}")

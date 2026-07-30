@@ -66,7 +66,6 @@ class RefundPath(Enum):
     NOT_PAID = "not_paid"
     ALREADY_REFUNDED = "already_refunded"
     AUTO_REFUND = "auto_refund"                # not fulfilled — refund now
-    CANCEL_AND_REFUND = "cancel_and_refund"     # fulfilled, not shipped — cancel + refund
     REQUIRES_RETURN = "requires_return"         # shipped — needs physical return first
     NOT_ELIGIBLE = "not_eligible"               # outside policy window/amount
 
