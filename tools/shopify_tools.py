@@ -437,27 +437,16 @@ def _send_ticket_notifications(ticket_id: int, channel: str, reason: str, custom
         except http_requests.exceptions.RequestException as e:
             logger.error(f"Telegram ticket notify failed: {e}")
 
-    if settings.RESEND_API_KEY and settings.OWNER_EMAIL:
-        base_address = settings.RESEND_INBOUND_ADDRESS
-        local_part, domain_part = base_address.split("@")
-        reply_to = f"{local_part}+ticket{ticket_id}@{domain_part}"
+    from integrations.email_service import send_email
 
-        try:
-            http_requests.post(
-                "https://api.resend.com/emails",
-                headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
-                json={
-                    "from": "Velvora Support <onboarding@resend.dev>",
-                    "to": [settings.OWNER_EMAIL],
-                    "reply_to": reply_to,
-                    "subject": f"Ticket #{ticket_id}: {reason[:60]}",
-                    "text": (
-                        f"{reason}\n\nCustomer email: {customer_email or 'not provided'}\n\n"
-                        f"Reply to this email to respond directly to the customer."
-                    ),
-                },
-                timeout=10,
-            )
-            logger.info(f"Email notification sent for ticket #{ticket_id}")
-        except http_requests.exceptions.RequestException as e:
-            logger.error(f"Email ticket notify failed: {e}")
+    if settings.OWNER_EMAIL:
+        send_email(
+            to=settings.OWNER_EMAIL,
+            subject=f"Ticket #{ticket_id}: {reason[:60]}",
+            body=(
+                f"{reason}\n\nCustomer email: {customer_email or 'not provided'}\n\n"
+                f"Reply from the admin dashboard to respond to this customer."
+            ),
+        )
+
+        logger.info(f"Email notification sent for ticket #{ticket_id}")

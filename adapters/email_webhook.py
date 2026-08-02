@@ -3,6 +3,10 @@ adapters/email_webhook.py
 ----------------------------
 Receives inbound email replies via Resend, appends them to the
 right ticket's thread, and routes the reply to the customer.
+
+Inbound: still via Resend (works fine, no restrictions on receiving).
+Outbound: via Gmail SMTP (Resend's free testing domain can only send
+to the account owner's own email — Gmail SMTP has no such restriction).
 """
 
 import re
@@ -11,6 +15,7 @@ from fastapi import APIRouter, Request
 
 from config import settings
 from persistence.queries import get_ticket, add_ticket_message, set_ticket_status, queue_human_reply
+from integrations.email_service import send_email
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -72,16 +77,10 @@ async def resend_inbound_webhook(request: Request):
             timeout=10,
         )
     elif ticket.get("customer_email"):
-        requests.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
-            json={
-                "from": "Velvora Support <onboarding@resend.dev>",
-                "to": [ticket["customer_email"]],
-                "subject": f"Re: Ticket #{ticket_id}",
-                "text": reply_text,
-            },
-            timeout=10,
+        send_email(
+            to=ticket["customer_email"],
+            subject=f"Re: Ticket #{ticket_id}",
+            body=reply_text,
         )
         queue_human_reply(channel, user_id, reply_text)
     else:

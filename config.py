@@ -56,6 +56,10 @@ class Settings:
     RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
     OWNER_EMAIL: str = os.getenv("OWNER_EMAIL", "")
 
+    # --- Gmail SMTP ---
+    GMAIL_ADDRESS: str = os.getenv("GMAIL_ADDRESS", "")
+    GMAIL_APP_PASSWORD: str = os.getenv("GMAIL_APP_PASSWORD", "")
+
     RESEND_WEBHOOK_SECRET: str = os.getenv("RESEND_WEBHOOK_SECRET", "")
     RESEND_INBOUND_ADDRESS: str = os.getenv("RESEND_INBOUND_ADDRESS", "")
     
