@@ -423,7 +423,7 @@ def escalate_to_human(
 
 
 def _send_ticket_notifications(ticket_id: int, channel: str, reason: str, customer_email: str) -> None:
-    """Notifies the owner of a new ticket via Telegram and email."""
+    """Notifies the owner of a new ticket via Telegram and email (Gmail SMTP)."""
     if settings.TELEGRAM_BOT_TOKEN and settings.OWNER_TELEGRAM_CHAT_ID:
         try:
             http_requests.post(
@@ -437,16 +437,15 @@ def _send_ticket_notifications(ticket_id: int, channel: str, reason: str, custom
         except http_requests.exceptions.RequestException as e:
             logger.error(f"Telegram ticket notify failed: {e}")
 
-    from integrations.email_service import send_email
-
     if settings.OWNER_EMAIL:
-        send_email(
+        from integrations.email_service import send_email
+        sent = send_email(
             to=settings.OWNER_EMAIL,
             subject=f"Ticket #{ticket_id}: {reason[:60]}",
             body=(
                 f"{reason}\n\nCustomer email: {customer_email or 'not provided'}\n\n"
-                f"Reply from the admin dashboard to respond to this customer."
+                f"Reply from the admin dashboard (/admin/ticket/{ticket_id}) to respond to this customer."
             ),
         )
-
-        logger.info(f"Email notification sent for ticket #{ticket_id}")
+        if sent:
+            logger.info(f"Email notification sent for ticket #{ticket_id}")

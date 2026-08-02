@@ -384,21 +384,12 @@ async def ticket_reply(ticket_id: int, request: Request, message: str = Form(...
             except http_requests.exceptions.RequestException as e:
                 logger.error(f"Failed to deliver reply via Telegram: {e}")
         elif ticket.get("customer_email"):
-            try:
-                http_requests.post(
-                    "https://api.resend.com/emails",
-                    headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
-                    json={
-                        "from": "Velvora Support <onboarding@resend.dev>",
-                        "to": [ticket["customer_email"]],
-                        "subject": f"Re: Ticket #{ticket_id}",
-                        "text": message,
-                    },
-                    timeout=10,
-                )
-            except http_requests.exceptions.RequestException as e:
-                logger.error(f"Failed to deliver reply via email: {e}")
-
+            from integrations.email_service import send_email
+            send_email(
+                to=ticket["customer_email"],
+                subject=f"Re: Ticket #{ticket_id}",
+                body=message,
+            )
         set_ticket_status(ticket_id, "pending")
 
     return RedirectResponse(url=f"/admin/ticket/{ticket_id}", status_code=303)
