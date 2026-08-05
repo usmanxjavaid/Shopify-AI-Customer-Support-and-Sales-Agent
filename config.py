@@ -45,6 +45,11 @@ class Settings:
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     OWNER_TELEGRAM_CHAT_ID: str = os.getenv("OWNER_TELEGRAM_CHAT_ID", "")
 
+    # --- Meta WhatsApp ---
+    META_WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("META_WHATSAPP_PHONE_NUMBER_ID", "")
+    META_WHATSAPP_ACCESS_TOKEN: str = os.getenv("META_WHATSAPP_ACCESS_TOKEN", "")
+    META_WEBHOOK_VERIFY_TOKEN: str = os.getenv("META_WEBHOOK_VERIFY_TOKEN", "")
+
     # --- Redis (Upstash) — conversation memory ---
     UPSTASH_REDIS_REST_URL: str = os.getenv("UPSTASH_REDIS_REST_URL", "")
     UPSTASH_REDIS_REST_TOKEN: str = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")

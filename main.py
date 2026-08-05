@@ -22,6 +22,7 @@ from adapters.telegram_adapter import router as telegram_router, _telegram_app
 from adapters.admin_routes import router as admin_router
 from adapters.web_adapter import router as web_router
 from adapters.email_webhook import router as email_webhook_router
+from adapters.whatsapp_adapter import router as whatsapp_router
 from persistence.db import init_db
 from logger import get_logger
 
@@ -63,6 +64,7 @@ app.include_router(web_router)
 app.include_router(admin_router)
 app.include_router(telegram_router)
 app.include_router(email_webhook_router)
+app.include_router(whatsapp_router)
 
 @app.get("/health")
 async def health():
