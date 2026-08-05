@@ -230,61 +230,156 @@ async def verify_whatsapp_webhook(request: Request):
     return PlainTextResponse(content="Verification failed", status_code=403)
 
 
+# @router.post("/webhooks/whatsapp")
+# async def whatsapp_webhook(request: Request):
+#     """
+#     Receives incoming WhatsApp messages (text or voice) and runs them
+#     through the full agent pipeline, same as every other channel.
+#     """
+#     payload = await request.json()
+
+#     try:
+#         entry = payload["entry"][0]
+#         changes = entry["changes"][0]
+#         value = changes["value"]
+
+#         if "messages" not in value:
+#             # Could be a status update (delivered/read receipt) — ignore
+#             return {"ok": True}
+
+#         message = value["messages"][0]
+#         from_number = message["from"]
+#         message_type = message["type"]
+
+#         if message_type == "text":
+#             text = message["text"]["body"]
+
+#         elif message_type == "audio":
+#             media_id = message["audio"]["id"]
+#             audio_bytes = _download_whatsapp_media(media_id)
+#             text = await transcribe_audio_bytes(audio_bytes, filename="voice.ogg")
+
+#             if not text:
+#                 _send_text_message(from_number, "Sorry, I couldn't understand that voice message.")
+#                 return {"ok": True}
+
+#         else:
+#             _send_text_message(from_number, "Sorry, I can only understand text and voice messages right now.")
+#             return {"ok": True}
+
+#         logger.info(f"Received WhatsApp message from {from_number}: {text}")
+
+#         msg = NormalizedMessage(user_id=from_number, channel="whatsapp", text=text)
+#         response = handle_message(msg)
+
+#         if message_type == "audio":
+#             audio_reply = await synthesize_speech(response.text)
+#             if audio_reply:
+#                 _send_voice_message(from_number, audio_reply)
+#             else:
+#                 _send_text_message(from_number, response.text)
+#         else:
+#             _send_text_message(from_number, response.text)
+
+#     except (KeyError, IndexError) as e:
+#         logger.warning(f"Unrecognized WhatsApp webhook payload shape: {e}")
+
+#     return {"ok": True}
+
+
+# logger.debug("adapters.whatsapp_adapter loaded successfully")
+
+import json
+import traceback
+
 @router.post("/webhooks/whatsapp")
 async def whatsapp_webhook(request: Request):
-    """
-    Receives incoming WhatsApp messages (text or voice) and runs them
-    through the full agent pipeline, same as every other channel.
-    """
-    payload = await request.json()
+    logger.info("=" * 80)
+    logger.info("WHATSAPP WEBHOOK HIT")
 
     try:
+        body = await request.body()
+        logger.info(f"Raw Body: {body.decode('utf-8')}")
+
+        payload = json.loads(body)
+
+        logger.info("Parsed JSON:")
+        logger.info(json.dumps(payload, indent=2))
+
         entry = payload["entry"][0]
         changes = entry["changes"][0]
         value = changes["value"]
 
+        logger.info(f"Webhook Value: {value}")
+
         if "messages" not in value:
-            # Could be a status update (delivered/read receipt) — ignore
+            logger.info("No messages field (probably status update).")
             return {"ok": True}
 
         message = value["messages"][0]
+
+        logger.info(f"Message Object: {message}")
+
         from_number = message["from"]
         message_type = message["type"]
+
+        logger.info(f"Sender: {from_number}")
+        logger.info(f"Message Type: {message_type}")
 
         if message_type == "text":
             text = message["text"]["body"]
 
         elif message_type == "audio":
             media_id = message["audio"]["id"]
+            logger.info(f"Audio Media ID: {media_id}")
+
             audio_bytes = _download_whatsapp_media(media_id)
             text = await transcribe_audio_bytes(audio_bytes, filename="voice.ogg")
 
             if not text:
-                _send_text_message(from_number, "Sorry, I couldn't understand that voice message.")
+                _send_text_message(
+                    from_number,
+                    "Sorry, I couldn't understand that voice message."
+                )
                 return {"ok": True}
 
         else:
-            _send_text_message(from_number, "Sorry, I can only understand text and voice messages right now.")
+            logger.warning(f"Unsupported message type: {message_type}")
+            _send_text_message(
+                from_number,
+                "Unsupported message type."
+            )
             return {"ok": True}
 
-        logger.info(f"Received WhatsApp message from {from_number}: {text}")
+        logger.info(f"Received Text: {text}")
 
-        msg = NormalizedMessage(user_id=from_number, channel="whatsapp", text=text)
+        msg = NormalizedMessage(
+            user_id=from_number,
+            channel="whatsapp",
+            text=text,
+        )
+
         response = handle_message(msg)
+
+        logger.info(f"AI Reply: {response.text}")
 
         if message_type == "audio":
             audio_reply = await synthesize_speech(response.text)
+
             if audio_reply:
                 _send_voice_message(from_number, audio_reply)
             else:
                 _send_text_message(from_number, response.text)
+
         else:
             _send_text_message(from_number, response.text)
 
-    except (KeyError, IndexError) as e:
-        logger.warning(f"Unrecognized WhatsApp webhook payload shape: {e}")
+        logger.info("Webhook processing completed successfully.")
+
+    except Exception:
+        logger.error("EXCEPTION INSIDE WEBHOOK")
+        logger.error(traceback.format_exc())
+
+    logger.info("=" * 80)
 
     return {"ok": True}
-
-
-logger.debug("adapters.whatsapp_adapter loaded successfully")
