@@ -30,23 +30,68 @@ router = APIRouter()
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
 
 
+# def _send_text_message(to: str, text: str) -> None:
+#     """Sends a plain text WhatsApp message via the Meta Cloud API."""
+#     url = f"{GRAPH_API_BASE}/{settings.META_WHATSAPP_PHONE_NUMBER_ID}/messages"
+#     headers = {"Authorization": f"Bearer {settings.META_WHATSAPP_ACCESS_TOKEN}"}
+#     payload = {
+#         "messaging_product": "whatsapp",
+#         "to": to,
+#         "type": "text",
+#         "text": {"body": text},
+#     }
+#     try:
+#         response = requests.post(url, headers=headers, json=payload, timeout=15)
+#         response.raise_for_status()
+#         logger.info(f"WhatsApp text sent to {to}")
+#     except requests.exceptions.RequestException as e:
+#         logger.error(f"Failed to send WhatsApp message to {to}: {e}")
+
 def _send_text_message(to: str, text: str) -> None:
     """Sends a plain text WhatsApp message via the Meta Cloud API."""
+
     url = f"{GRAPH_API_BASE}/{settings.META_WHATSAPP_PHONE_NUMBER_ID}/messages"
-    headers = {"Authorization": f"Bearer {settings.META_WHATSAPP_ACCESS_TOKEN}"}
+
+    headers = {
+        "Authorization": f"Bearer {settings.META_WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
     payload = {
         "messaging_product": "whatsapp",
+        "recipient_type": "individual",
         "to": to,
         "type": "text",
-        "text": {"body": text},
+        "text": {
+            "preview_url": False,
+            "body": text,
+        },
     }
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
-        response.raise_for_status()
-        logger.info(f"WhatsApp text sent to {to}")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to send WhatsApp message to {to}: {e}")
 
+    logger.info(f"Phone Number ID = {settings.META_WHATSAPP_PHONE_NUMBER_ID}")
+    logger.info(f"Sending reply to = {to}")
+    logger.info(f"Payload = {payload}")
+
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=15,
+        )
+
+        logger.info(f"Meta Status Code: {response.status_code}")
+        logger.info(f"Meta Response: {response.text}")
+
+        response.raise_for_status()
+
+        logger.info("WhatsApp message sent successfully.")
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Meta Exception: {e}")
+
+        if e.response is not None:
+            logger.error(f"Meta Error Body: {e.response.text}")
 
 def _download_whatsapp_media(media_id: str) -> bytes:
     """
@@ -66,34 +111,103 @@ def _download_whatsapp_media(media_id: str) -> bytes:
     return media_response.content
 
 
+# def _send_voice_message(to: str, audio_bytes: bytes) -> None:
+#     """
+#     Sends a voice reply via WhatsApp. WhatsApp requires media to be
+#     uploaded first (getting a media ID), then referenced in a message.
+#     """
+#     upload_url = f"{GRAPH_API_BASE}/{settings.META_WHATSAPP_PHONE_NUMBER_ID}/media"
+#     headers = {"Authorization": f"Bearer {settings.META_WHATSAPP_ACCESS_TOKEN}"}
+
+#     try:
+#         files = {"file": ("reply.ogg", audio_bytes, "audio/ogg")}
+#         data = {"messaging_product": "whatsapp", "type": "audio/ogg"}
+#         upload_response = requests.post(upload_url, headers=headers, files=files, data=data, timeout=30)
+#         upload_response.raise_for_status()
+#         media_id = upload_response.json()["id"]
+
+#         send_url = f"{GRAPH_API_BASE}/{settings.META_WHATSAPP_PHONE_NUMBER_ID}/messages"
+#         payload = {
+#             "messaging_product": "whatsapp",
+#             "to": to,
+#             "type": "audio",
+#             "audio": {"id": media_id},
+#         }
+#         send_response = requests.post(send_url, headers=headers, json=payload, timeout=15)
+#         send_response.raise_for_status()
+#         logger.info(f"WhatsApp voice reply sent to {to}")
+
+#     except requests.exceptions.RequestException as e:
+#         logger.error(f"Failed to send WhatsApp voice message to {to}: {e}")
+
 def _send_voice_message(to: str, audio_bytes: bytes) -> None:
     """
-    Sends a voice reply via WhatsApp. WhatsApp requires media to be
-    uploaded first (getting a media ID), then referenced in a message.
+    Uploads an audio file to WhatsApp and sends it as a voice message.
     """
+
     upload_url = f"{GRAPH_API_BASE}/{settings.META_WHATSAPP_PHONE_NUMBER_ID}/media"
-    headers = {"Authorization": f"Bearer {settings.META_WHATSAPP_ACCESS_TOKEN}"}
+    headers = {
+        "Authorization": f"Bearer {settings.META_WHATSAPP_ACCESS_TOKEN}"
+    }
 
     try:
-        files = {"file": ("reply.ogg", audio_bytes, "audio/ogg")}
-        data = {"messaging_product": "whatsapp", "type": "audio/ogg"}
-        upload_response = requests.post(upload_url, headers=headers, files=files, data=data, timeout=30)
+        # Step 1: Upload the audio
+        files = {
+            "file": ("reply.ogg", audio_bytes, "audio/ogg")
+        }
+
+        data = {
+            "messaging_product": "whatsapp",
+            "type": "audio/ogg"
+        }
+
+        upload_response = requests.post(
+            upload_url,
+            headers=headers,
+            files=files,
+            data=data,
+            timeout=30,
+        )
+
+        logger.info(f"Upload Status: {upload_response.status_code}")
+        logger.info(f"Upload Response: {upload_response.text}")
+
         upload_response.raise_for_status()
+
         media_id = upload_response.json()["id"]
 
+        # Step 2: Send the uploaded media
         send_url = f"{GRAPH_API_BASE}/{settings.META_WHATSAPP_PHONE_NUMBER_ID}/messages"
+
         payload = {
             "messaging_product": "whatsapp",
             "to": to,
             "type": "audio",
-            "audio": {"id": media_id},
+            "audio": {
+                "id": media_id
+            }
         }
-        send_response = requests.post(send_url, headers=headers, json=payload, timeout=15)
-        send_response.raise_for_status()
-        logger.info(f"WhatsApp voice reply sent to {to}")
 
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to send WhatsApp voice message to {to}: {e}")
+        send_response = requests.post(
+            send_url,
+            headers=headers,
+            json=payload,
+            timeout=15,
+        )
+
+        logger.info(f"Send Status: {send_response.status_code}")
+        logger.info(f"Send Response: {send_response.text}")
+
+        send_response.raise_for_status()
+
+        logger.info(f"WhatsApp voice message sent successfully to {to}")
+
+    except requests.exceptions.HTTPError:
+        logger.error(f"HTTP Error: {send_response.status_code if 'send_response' in locals() else upload_response.status_code}")
+        logger.error(send_response.text if 'send_response' in locals() else upload_response.text)
+
+    except Exception as e:
+        logger.exception(f"Failed to send WhatsApp voice message: {e}")
 
 
 @router.get("/webhooks/whatsapp")
