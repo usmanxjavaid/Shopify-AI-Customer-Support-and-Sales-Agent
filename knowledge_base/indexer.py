@@ -13,7 +13,7 @@ from pathlib import Path
 
 from knowledge_base.document_readers import read_document, READERS
 from knowledge_base.chunker import chunk_text
-from knowledge_base.vector_store import clear_collection, add_chunks
+from knowledge_base.vector_store import clear_collection, add_chunks, collection_is_empty
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -70,6 +70,26 @@ def build_index() -> int:
 
     logger.info(f"Knowledge base indexed: {len(all_chunks)} total chunks")
     return len(all_chunks)
+
+
+def ensure_index_built() -> None:
+    """
+    Builds the knowledge base index automatically if it's currently
+    empty — called on app startup. Safe to call every time the app
+    starts: does nothing (no API calls, no cost) if the index already
+    has data, only builds if genuinely missing (e.g. first deploy,
+    fresh container, wiped volume).
+
+    If you update documents in knowledge/, still run build_index.py
+    manually to force a rebuild — this function only fills a gap,
+    it doesn't detect changed documents.
+    """
+    if collection_is_empty():
+        logger.info("Knowledge base index is empty — building automatically")
+        count = build_index()
+        logger.info(f"Auto-build complete: indexed {count} chunks")
+    else:
+        logger.debug("Knowledge base index already populated, skipping auto-build")
 
 
 logger.debug("knowledge_base.indexer loaded successfully")

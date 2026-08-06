@@ -17,8 +17,7 @@ the same FastAPI app as the web widget and admin dashboard.
 import requests
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
-import json
-import traceback
+
 from config import settings
 from core.models import NormalizedMessage
 from core.orchestrator import handle_message
@@ -192,6 +191,9 @@ async def verify_whatsapp_webhook(request: Request):
 
     logger.warning("WhatsApp webhook verification failed")
     return PlainTextResponse(content="Verification failed", status_code=403)
+
+import json
+import traceback
 
 @router.post("/webhooks/whatsapp")
 async def whatsapp_webhook(request: Request):

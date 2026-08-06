@@ -24,31 +24,44 @@ class GeminiEmbeddingFunction:
     """
     Custom ChromaDB embedding function using Google's Gemini API
     instead of a local model.
+
+    Implements BOTH __call__ (used for batch operations like adding
+    documents) and embed_query (used internally by ChromaDB for
+    single-query searches) — newer ChromaDB versions call embed_query
+    directly for queries rather than always going through __call__.
     """
 
     def name(self) -> str:
         """Required by ChromaDB to identify this embedding function."""
         return "gemini-text-embedding-004"
 
+    def _embed_one(self, text: str) -> list[float]:
+        try:
+            response = requests.post(
+                url=(
+                    "https://generativelanguage.googleapis.com/v1beta/"
+                    "models/text-embedding-004:embedContent"
+                    f"?key={settings.GOOGLE_AI_API_KEY}"
+                ),
+                json={"content": {"parts": [{"text": text}]}},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()["embedding"]["values"]
+        except Exception as e:
+            logger.error(f"Embedding failed: {e}")
+            return [0.0] * 768
+
     def __call__(self, input: list[str]) -> list[list[float]]:
-        embeddings = []
-        for text in input:
-            try:
-                response = requests.post(
-                    url=(
-                        "https://generativelanguage.googleapis.com/v1beta/"
-                        "models/text-embedding-004:embedContent"
-                        f"?key={settings.GOOGLE_AI_API_KEY}"
-                    ),
-                    json={"content": {"parts": [{"text": text}]}},
-                    timeout=30,
-                )
-                response.raise_for_status()
-                embeddings.append(response.json()["embedding"]["values"])
-            except Exception as e:
-                logger.error(f"Embedding failed: {e}")
-                embeddings.append([0.0] * 768)
-        return embeddings
+        return [self._embed_one(text) for text in input]
+
+    def embed_query(self, text: str) -> list[float]:
+        """Called by newer ChromaDB versions for single-query embedding."""
+        return self._embed_one(text)
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Some ChromaDB code paths call this instead of __call__ directly."""
+        return [self._embed_one(text) for text in texts]
 
 
 _client = chromadb.PersistentClient(path=str(CHROMA_DIR))
@@ -57,6 +70,21 @@ _collection = _client.get_or_create_collection(
     embedding_function=GeminiEmbeddingFunction(),
 )
 
+def collection_is_empty() -> bool:
+    """
+    Checks whether the vector store currently has any indexed chunks.
+
+    Used at startup to decide whether we need to build the index
+    automatically — avoids wasting API calls re-embedding on every
+    restart when the index already exists, while still guaranteeing
+    it gets built at least once on a fresh deployment.
+    """
+    try:
+        existing_ids = _collection.get()["ids"]
+        return len(existing_ids) == 0
+    except Exception as e:
+        logger.error(f"Failed to check if collection is empty: {e}")
+        return True
 
 def clear_collection() -> int:
     existing_ids = _collection.get()["ids"]

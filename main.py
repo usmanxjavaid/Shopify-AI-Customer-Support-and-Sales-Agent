@@ -24,27 +24,22 @@ from adapters.web_adapter import router as web_router
 from adapters.email_webhook import router as email_webhook_router
 from adapters.whatsapp_adapter import router as whatsapp_router
 from persistence.db import init_db
+from knowledge_base.indexer import ensure_index_built
 from logger import get_logger
 
 logger = get_logger(__name__)
 
 
+#     logger.info("FastAPI app shutting down")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Modern replacement for the deprecated @app.on_event("startup").
-
-    Code before `yield` runs once on startup (ensures DB tables exist).
-    Code after `yield` would run on shutdown (nothing needed there yet).
-    """
     init_db()
-    await _telegram_app.initialize()
-
     logger.info("FastAPI app started, database ready")
 
-    yield
+    ensure_index_built()
 
-    await _telegram_app.shutdown()
+    yield
     logger.info("FastAPI app shutting down")
 
 

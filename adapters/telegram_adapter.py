@@ -30,6 +30,7 @@ from telegram.ext import MessageHandler, filters, CommandHandler
 from core.orchestrator import handle_message
 from persistence.db import init_db
 from telegram.constants import ParseMode
+from knowledge_base.indexer import ensure_index_built
 from logger import get_logger
 logger = get_logger(__name__)
 
@@ -161,6 +162,7 @@ def run() -> None:
     Good for development and small-scale production use.
     """
     init_db()
+    ensure_index_built()
     logger.info("Starting Telegram bot...")
 
     app = (
