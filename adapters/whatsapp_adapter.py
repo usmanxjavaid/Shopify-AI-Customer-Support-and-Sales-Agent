@@ -17,7 +17,8 @@ the same FastAPI app as the web widget and admin dashboard.
 import requests
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
-
+import json
+import traceback
 from config import settings
 from core.models import NormalizedMessage
 from core.orchestrator import handle_message
@@ -29,6 +30,15 @@ router = APIRouter()
 
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
 
+import re
+
+def _convert_to_whatsapp_markdown(text: str) -> str:
+    """
+    Converts standard **bold** markdown (used by our system prompt,
+    which Telegram and the web widget both render correctly) into
+    WhatsApp's own single-asterisk bold syntax.
+    """
+    return re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)
 
 def _send_text_message(to: str, text: str) -> None:
     """Sends a plain text WhatsApp message via the Meta Cloud API."""
@@ -47,7 +57,7 @@ def _send_text_message(to: str, text: str) -> None:
         "type": "text",
         "text": {
             "preview_url": False,
-            "body": text,
+            "body": _convert_to_whatsapp_markdown(text),
         },
     }
 
@@ -182,9 +192,6 @@ async def verify_whatsapp_webhook(request: Request):
 
     logger.warning("WhatsApp webhook verification failed")
     return PlainTextResponse(content="Verification failed", status_code=403)
-
-import json
-import traceback
 
 @router.post("/webhooks/whatsapp")
 async def whatsapp_webhook(request: Request):
