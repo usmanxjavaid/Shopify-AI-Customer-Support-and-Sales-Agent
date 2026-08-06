@@ -55,13 +55,21 @@ class GeminiEmbeddingFunction:
     def __call__(self, input: list[str]) -> list[list[float]]:
         return [self._embed_one(text) for text in input]
 
-    def embed_query(self, text: str) -> list[float]:
-        """Called by newer ChromaDB versions for single-query embedding."""
-        return self._embed_one(text)
+    def embed_query(self, input) -> list[list[float]]:
+        """
+        ChromaDB calls this the same way as __call__ (same 'input'
+        keyword), just for query-time embedding rather than document
+        indexing. Delegate straight to __call__ for consistency.
+        """
+        if isinstance(input, str):
+            input = [input]
+        return self.__call__(input)
 
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+    def embed_documents(self, input) -> list[list[float]]:
         """Some ChromaDB code paths call this instead of __call__ directly."""
-        return [self._embed_one(text) for text in texts]
+        if isinstance(input, str):
+            input = [input]
+        return self.__call__(input)
 
 
 _client = chromadb.PersistentClient(path=str(CHROMA_DIR))
