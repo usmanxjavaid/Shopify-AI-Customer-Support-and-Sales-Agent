@@ -345,6 +345,8 @@ async def whatsapp_webhook(request: Request):
 
         else:
             logger.warning(f"Unsupported message type: {message_type}")
+
+            logger.info(f'Sending reply to whatsapp number: {from_number}')
             _send_text_message(
                 from_number,
                 "Unsupported message type."
