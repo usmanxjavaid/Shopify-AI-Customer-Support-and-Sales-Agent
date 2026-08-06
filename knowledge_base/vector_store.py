@@ -40,7 +40,7 @@ class GeminiEmbeddingFunction:
             response = requests.post(
                 url=(
                     "https://generativelanguage.googleapis.com/v1beta/"
-                    "models/text-embedding-004:embedContent"
+                    "models/gemini-embedding-001:embedContent"
                     f"?key={settings.GOOGLE_AI_API_KEY}"
                 ),
                 json={"content": {"parts": [{"text": text}]}},
