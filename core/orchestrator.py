@@ -127,6 +127,8 @@ def _call_groq(messages: list[dict]) -> Optional[dict]:
 
     except requests.exceptions.RequestException as e:
         logger.error(f"Groq fallback call also failed: {e}")
+        if hasattr(e, "response") and e.response is not None:
+            logger.error(f"Groq error body: {e.response.text}")
         return None
 
 

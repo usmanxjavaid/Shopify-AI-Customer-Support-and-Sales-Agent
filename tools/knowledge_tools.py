@@ -14,7 +14,7 @@ from logger import get_logger
 logger = get_logger(__name__)
 
 
-def search_knowledge_base(question: str) -> str:
+def search_knowledge_base(question: str, **kwargs) -> str:
     """
     Searches the store's policy documents (shipping, returns,
     warranty, FAQ, terms of service) for an answer to a customer's

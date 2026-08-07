@@ -21,7 +21,7 @@ from logger import get_logger
 
 logger = get_logger(__name__)
 
-MAX_HISTORY = 20
+MAX_HISTORY = 5
 
 _redis = Redis(
     url=settings.UPSTASH_REDIS_REST_URL,

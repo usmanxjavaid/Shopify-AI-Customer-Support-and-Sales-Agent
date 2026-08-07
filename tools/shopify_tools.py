@@ -40,7 +40,7 @@ _client = ShopifyClient()
 # Order tools
 # ------------------------------------------------------------------
 
-def get_order_status(order_number: str) -> str:
+def get_order_status(order_number: str, **kwargs) -> str:
     """
     Fetches the current status of an order by its order number.
 
@@ -106,7 +106,7 @@ def get_order_status(order_number: str) -> str:
 # Product tools
 # ------------------------------------------------------------------
 
-def get_all_products() -> str:
+def get_all_products(**kwargs) -> str:
     """
     Returns a list of all products available in the store.
 
@@ -152,7 +152,7 @@ def get_all_products() -> str:
         )
 
 
-def get_product_details(product_id: int) -> str:
+def get_product_details(product_id: int, **kwargs) -> str:
     """
     Returns detailed information about a specific product by its ID.
 
@@ -205,7 +205,7 @@ def get_product_details(product_id: int) -> str:
             "Please try again in a moment."
         )
 
-def verify_customer_email(order_number: str, email: str) -> str:
+def verify_customer_email(order_number: str, email: str, **kwargs) -> str:
     """
     Verifies that the given email matches the customer email on file
     for a specific order. Use this BEFORE processing a refund, to
@@ -274,6 +274,7 @@ def initiate_refund(
     verified_email: str,
     channel: str = "unknown",
     user_id: str = "unknown",
+    **kwargs
 ) -> str:
     """
     Processes a refund request by routing it through the correct
@@ -384,6 +385,7 @@ def escalate_to_human(
     customer_email: str = None,
     channel: str = "unknown",
     user_id: str = "unknown",
+    **kwargs
 ) -> str:
     """
     Escalates the conversation to a human agent, creating a proper
@@ -422,7 +424,7 @@ def escalate_to_human(
     )
 
 
-def _send_ticket_notifications(ticket_id: int, channel: str, reason: str, customer_email: str) -> None:
+def _send_ticket_notifications(ticket_id: int, channel: str, reason: str, customer_email: str, **kwargs) -> None:
     """Notifies the owner of a new ticket via Telegram and email (Gmail SMTP)."""
     if settings.TELEGRAM_BOT_TOKEN and settings.OWNER_TELEGRAM_CHAT_ID:
         try:
