@@ -17,11 +17,11 @@ the same FastAPI app as the web widget and admin dashboard.
 import requests
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
-
+from fastapi import BackgroundTasks
 from config import settings
 from core.models import NormalizedMessage
 from core.orchestrator import handle_message
-from integrations.voice_service import transcribe_audio_bytes, synthesize_speech
+from integrations.voice_service import transcribe_audio_bytes, synthesize_speech, convert_wav_to_ogg_opus
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -103,10 +103,19 @@ def _download_whatsapp_media(media_id: str) -> bytes:
     return media_response.content
 
 
-def _send_voice_message(to: str, audio_bytes: bytes) -> None:
+def _send_voice_message(to: str, wav_audio_bytes: bytes) -> None:
     """
     Uploads an audio file to WhatsApp and sends it as a voice message.
+
+    WhatsApp strictly validates that the file content actually matches
+    the declared mimetype (audio/ogg codecs=opus) — our TTS produces
+    WAV, so we must genuinely convert it, not just relabel it.
     """
+    audio_bytes = convert_wav_to_ogg_opus(wav_audio_bytes)
+
+    if not audio_bytes:
+        logger.error("WAV to OGG/Opus conversion failed, cannot send WhatsApp voice reply")
+        return
 
     upload_url = f"{GRAPH_API_BASE}/{settings.META_WHATSAPP_PHONE_NUMBER_ID}/media"
     headers = {
@@ -116,7 +125,7 @@ def _send_voice_message(to: str, audio_bytes: bytes) -> None:
     try:
         # Step 1: Upload the audio
         files = {
-            "file": ("reply.ogg", audio_bytes, "audio/ogg")
+            "file": ("reply.ogg", audio_bytes, "audio/ogg; codecs=opus")
         }
 
         data = {
@@ -172,6 +181,20 @@ def _send_voice_message(to: str, audio_bytes: bytes) -> None:
     except Exception as e:
         logger.exception(f"Failed to send WhatsApp voice message: {e}")
 
+_processed_message_ids = set()
+
+def _already_processed(message_id: str) -> bool:
+    """
+    WhatsApp can redeliver the same webhook event on retry. This
+    guards against processing (and replying to) the same inbound
+    message twice.
+    """
+    if message_id in _processed_message_ids:
+        return True
+    _processed_message_ids.add(message_id)
+    if len(_processed_message_ids) > 1000:
+        _processed_message_ids.clear()
+    return False
 
 @router.get("/webhooks/whatsapp")
 async def verify_whatsapp_webhook(request: Request):
@@ -196,33 +219,52 @@ import json
 import traceback
 
 @router.post("/webhooks/whatsapp")
-async def whatsapp_webhook(request: Request):
-    logger.info("=" * 80)
-    logger.info("WHATSAPP WEBHOOK HIT")
+async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
+    """
+    Acknowledges Meta's webhook IMMEDIATELY (before any slow work),
+    then processes the actual message in the background. This is
+    required because Meta retries webhook delivery if it doesn't
+    get a fast 200 response — and voice processing (transcribe +
+    LLM + TTS + conversion + upload) can easily take 10-20+ seconds,
+    well past Meta's timeout, causing duplicate replies otherwise.
+    """
+    body = await request.body()
 
     try:
-        body = await request.body()
-        logger.info(f"Raw Body: {body.decode('utf-8')}")
-
         payload = json.loads(body)
-
-        logger.info("Parsed JSON:")
-        logger.info(json.dumps(payload, indent=2))
-
         entry = payload["entry"][0]
         changes = entry["changes"][0]
         value = changes["value"]
 
-        logger.info(f"Webhook Value: {value}")
-
         if "messages" not in value:
-            logger.info("No messages field (probably status update).")
             return {"ok": True}
 
         message = value["messages"][0]
+        message_id = message.get("id")
 
-        logger.info(f"Message Object: {message}")
+        if message_id and _already_processed(message_id):
+            logger.info(f"Skipping duplicate message {message_id}")
+            return {"ok": True}
 
+        # Hand off the actual work to run AFTER we respond to Meta
+        background_tasks.add_task(_process_whatsapp_message, message)
+
+    except (KeyError, IndexError) as e:
+        logger.warning(f"Unrecognized WhatsApp webhook payload shape: {e}")
+
+    return {"ok": True}
+
+
+async def _process_whatsapp_message(message: dict) -> None:
+    """
+    Does the actual slow work: transcription, agent processing,
+    and sending the reply. Runs as a background task, AFTER we've
+    already told Meta the webhook was received successfully.
+    """
+    logger.info("=" * 80)
+    logger.info("Processing WhatsApp message in background")
+
+    try:
         from_number = message["from"]
         message_type = message["type"]
 
@@ -234,57 +276,37 @@ async def whatsapp_webhook(request: Request):
 
         elif message_type == "audio":
             media_id = message["audio"]["id"]
-            logger.info(f"Audio Media ID: {media_id}")
-
             audio_bytes = _download_whatsapp_media(media_id)
             text = await transcribe_audio_bytes(audio_bytes, filename="voice.ogg")
 
             if not text:
-                _send_text_message(
-                    from_number,
-                    "Sorry, I couldn't understand that voice message."
-                )
-                return {"ok": True}
+                _send_text_message(from_number, "Sorry, I couldn't understand that voice message.")
+                return
 
         else:
-            logger.warning(f"Unsupported message type: {message_type}")
-
-            logger.info(f'Sending reply to whatsapp number: {from_number}')
-            _send_text_message(
-                from_number,
-                "Unsupported message type."
-            )
-            return {"ok": True}
+            _send_text_message(from_number, "Sorry, I can only understand text and voice messages right now.")
+            return
 
         logger.info(f"Received Text: {text}")
 
-        msg = NormalizedMessage(
-            user_id=from_number,
-            channel="whatsapp",
-            text=text,
-        )
-
+        msg = NormalizedMessage(user_id=from_number, channel="whatsapp", text=text)
         response = handle_message(msg)
 
         logger.info(f"AI Reply: {response.text}")
 
         if message_type == "audio":
             audio_reply = await synthesize_speech(response.text)
-
             if audio_reply:
                 _send_voice_message(from_number, audio_reply)
             else:
                 _send_text_message(from_number, response.text)
-
         else:
             _send_text_message(from_number, response.text)
 
-        logger.info("Webhook processing completed successfully.")
+        logger.info("Background processing completed successfully.")
 
     except Exception:
-        logger.error("EXCEPTION INSIDE WEBHOOK")
+        logger.error("EXCEPTION IN BACKGROUND PROCESSING")
         logger.error(traceback.format_exc())
 
     logger.info("=" * 80)
-
-    return {"ok": True}
