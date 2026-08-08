@@ -21,10 +21,10 @@ TOOL_SCHEMAS = [
             "name": "search_knowledge_base",
             "description": (
                 "Search the store's policy documents for answers about "
-                "shipping times, return windows, warranty coverage, "
-                "payment methods, sizing guides, or general FAQ. Use "
-                "this for any policy question not answerable via order "
-                "or product lookup tools."
+                "shipping, returns, warranty, payment, sizing, or general FAQ. "
+                "Call this ONCE with a broad query covering what the customer "
+                "asked — do not call it multiple times for sub-topics in the "
+                "same turn. It already returns multiple relevant chunks."
             ),
             "parameters": {
                 "type": "object",

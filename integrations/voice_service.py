@@ -55,18 +55,11 @@ async def transcribe_audio_bytes(audio_bytes: bytes, filename: str = "audio.ogg"
         return ""
 
 
-async def synthesize_speech(text: str) -> bytes:
+async def synthesize_speech(text: str, _retry: bool = True) -> bytes:
     """
     Converts text to speech using Google AI Studio's Gemini TTS API.
-
-    Gemini's TTS returns raw PCM audio (16-bit, 24kHz, mono), which
-    we wrap into a proper WAV container so it's valid, playable audio.
-
-    Args:
-        text: The text to convert to speech.
-
-    Returns:
-        WAV-formatted audio bytes, or empty bytes if synthesis failed.
+    Retries once on failure (Gemini's TTS endpoint has shown
+    occasional transient 500s and timeouts) before giving up.
     """
     logger.info("Synthesizing speech")
 
@@ -111,6 +104,9 @@ async def synthesize_speech(text: str) -> bytes:
 
     except Exception as e:
         logger.error(f"Speech synthesis failed: {e}")
+        if _retry:
+            logger.info("Retrying speech synthesis once")
+            return await synthesize_speech(text, _retry=False)
         return b""
 
 def convert_wav_to_ogg_opus(wav_bytes: bytes) -> bytes:

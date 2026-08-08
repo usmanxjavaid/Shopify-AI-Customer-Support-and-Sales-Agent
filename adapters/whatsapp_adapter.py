@@ -183,6 +183,33 @@ def _send_voice_message(to: str, wav_audio_bytes: bytes) -> None:
 
 _processed_message_ids = set()
 
+import time
+
+_recent_texts = {}  # (sender, text) -> timestamp
+_RECENT_TEXT_WINDOW_SECONDS = 120
+
+def _is_recent_duplicate_content(sender: str, text: str) -> bool:
+    """
+    Catches the case where the SAME person sends the SAME question
+    again within a short window — usually because they didn't see a
+    reply in time and resent it themselves, not because anything is
+    wrong. This is a heuristic, not perfect: an intentional repeat
+    question within 2 minutes would also get silently skipped, but
+    that's an acceptable tradeoff to stop redundant processing.
+    """
+    key = (sender, text.strip().lower())
+    now = time.time()
+
+    last_seen = _recent_texts.get(key)
+    _recent_texts[key] = now
+
+    if len(_recent_texts) > 500:
+        _recent_texts.clear()
+
+    if last_seen and (now - last_seen) < _RECENT_TEXT_WINDOW_SECONDS:
+        return True
+    return False
+
 def _already_processed(message_id: str) -> bool:
     """
     WhatsApp can redeliver the same webhook event on retry. This
@@ -288,6 +315,10 @@ async def _process_whatsapp_message(message: dict) -> None:
             return
 
         logger.info(f"Received Text: {text}")
+
+        if _is_recent_duplicate_content(from_number, text):
+            logger.info(f"Skipping likely accidental resend from {from_number}: {text}")
+            return
 
         msg = NormalizedMessage(user_id=from_number, channel="whatsapp", text=text)
         response = handle_message(msg)
