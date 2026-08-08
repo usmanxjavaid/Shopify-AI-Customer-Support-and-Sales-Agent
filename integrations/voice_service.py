@@ -13,7 +13,9 @@ import base64
 import io
 import wave
 import requests
-
+import subprocess
+import tempfile
+import os
 from config import settings
 from logger import get_logger
 
@@ -111,5 +113,51 @@ async def synthesize_speech(text: str) -> bytes:
         logger.error(f"Speech synthesis failed: {e}")
         return b""
 
+def convert_wav_to_ogg_opus(wav_bytes: bytes) -> bytes:
+    """
+    Converts WAV audio to OGG/Opus format using ffmpeg.
+
+    Required for platforms that only accept genuine OGG/Opus audio
+    for voice messages (Telegram's native voice bubble, WhatsApp's
+    voice message type) — both strictly validate actual file content
+    against the declared format, so relabeling WAV bytes as OGG
+    without real conversion gets rejected.
+
+    Args:
+        wav_bytes: Raw WAV audio bytes (our TTS output format).
+
+    Returns:
+        OGG/Opus encoded audio bytes, or empty bytes if conversion fails.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wav_file:
+        wav_file.write(wav_bytes)
+        wav_path = wav_file.name
+
+    ogg_path = wav_path.replace(".wav", ".ogg")
+
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", wav_path,
+                "-c:a", "libopus", "-b:a", "32k",
+                ogg_path,
+            ],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+        with open(ogg_path, "rb") as f:
+            ogg_bytes = f.read()
+        logger.info("Converted WAV to OGG/Opus successfully")
+        return ogg_bytes
+
+    except Exception as e:
+        logger.error(f"ffmpeg conversion failed: {e}")
+        return b""
+
+    finally:
+        for path in (wav_path, ogg_path):
+            if os.path.exists(path):
+                os.remove(path)
 
 logger.debug("integrations.voice_service loaded successfully")
