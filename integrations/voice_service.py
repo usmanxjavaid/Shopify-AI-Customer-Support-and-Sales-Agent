@@ -88,7 +88,7 @@ async def synthesize_speech(text: str) -> bytes:
                     },
                 },
             },
-            timeout=30,
+            timeout=60,
         )
         response.raise_for_status()
 
